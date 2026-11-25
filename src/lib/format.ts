@@ -3,6 +3,10 @@ const amountFormatter = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
 });
 
+const quantityFormatter = new Intl.NumberFormat("en-IN", {
+  maximumFractionDigits: 3,
+});
+
 const dateFormatter = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
   month: "short",
@@ -30,6 +34,17 @@ export function formatNPR(amount: number): string {
 
 export function formatCurrency(value: number): string {
   return `Rs. ${amountFormatter.format(value)}`;
+}
+
+export function formatQuantity(value: number): string {
+  return quantityFormatter.format(value);
+}
+
+export function formatMovementDate(value: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 /**
