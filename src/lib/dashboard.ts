@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { connection } from "next/server";
 
 // Server-side client using env vars (safe for server components)
 function getServerClient() {
@@ -94,6 +95,7 @@ function todayISO(): string {
 // ─── Main data fetch ──────────────────────────────────────────────────────────
 
 export async function getDashboardData(): Promise<DashboardData> {
+  await connection();
   const db = getServerClient();
   const today = todayISO();
 

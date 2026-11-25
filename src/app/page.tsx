@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getDashboardData } from "@/lib/dashboard";
 import { formatNPR, formatDate } from "@/lib/format";
 import {
@@ -195,14 +196,20 @@ export default async function DashboardPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-xl bg-[#F4C44E] text-[#0C3B37] px-3.5 py-2 text-xs font-semibold shadow-xs">
+                    <Link
+                      href="/reconcile"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#F4C44E] text-[#0C3B37] px-3.5 py-2 text-xs font-semibold shadow-xs hover:bg-[#e5b53f] transition-colors"
+                    >
                       Transfer / Reconcile
                       <ArrowRight className="h-3.5 w-3.5" />
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/15 text-white px-3.5 py-2 text-xs font-medium">
+                    </Link>
+                    <Link
+                      href="/passbook"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/15 text-white px-3.5 py-2 text-xs font-medium hover:bg-white/15 transition-colors"
+                    >
                       <Download className="h-3.5 w-3.5" />
                       Passbook
-                    </span>
+                    </Link>
                   </div>
                 </div>
               </div>
