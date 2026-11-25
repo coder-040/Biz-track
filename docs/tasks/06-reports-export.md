@@ -15,4 +15,4 @@ Let owners review and export transaction, credit, payable, inventory and stock r
 - `products`: `id`, `name`, `sku`, `category`, `purchase_price`, `selling_price`, `current_stock`, `min_stock`, `is_active`, `created_at` (inventory and low-stock reports).
 - `stock_movements`: `id`, `product_id`, `transaction_id`, `type`, `quantity`, `unit_cost`, `reason`, `created_at`. Filter on `created_at` for stock-movement history.
 
-Schema note: no new tables or columns are needed. `supabase/schema.sql` has no business/owner/role table or column, so exports cannot assume per-business scoping is already enforced.
+Schema note: no new tables or columns are needed. `supabase/schema.sql` does define `businesses`, `business_members`, `audit_log` and a NOT NULL `business_id` on `parties`, `products`, `transactions` and `stock_movements`, but its RLS policies are demo-only (`anon` has full access), so exports cannot assume per-business scoping is enforced at the DB layer.
