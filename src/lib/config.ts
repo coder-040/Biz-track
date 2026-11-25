@@ -5,7 +5,27 @@ function required(name: string, value: string | undefined): string {
   return value;
 }
 
-export const SUPABASE_URL = required(
+function supabaseUrl(name: string, value: string | undefined): string {
+  const raw = required(name, value);
+  let parsed: URL;
+
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`${name} must be a valid URL`);
+  }
+
+  if (parsed.pathname !== "/" || parsed.search || parsed.hash) {
+    throw new Error(
+      `${name} must be the project API origin only (for example ` +
+        `https://<project-ref>.supabase.co). Do not include /rest/v1 or a dashboard path.`,
+    );
+  }
+
+  return parsed.origin;
+}
+
+export const SUPABASE_URL = supabaseUrl(
   "NEXT_PUBLIC_SUPABASE_URL",
   process.env.NEXT_PUBLIC_SUPABASE_URL,
 );

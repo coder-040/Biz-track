@@ -32,6 +32,24 @@ interface TotalsRow {
   transaction_date: string;
 }
 
+interface QueryError {
+  message: string;
+  code?: string;
+  details?: string | null;
+  hint?: string | null;
+}
+
+function logQueryError(label: string, error: QueryError): void {
+  if (process.env.NODE_ENV === "production") return;
+
+  console.error(`[transactions] ${label} Supabase error`, {
+    message: error.message?.slice(0, 1000),
+    code: error.code,
+    details: error.details,
+    hint: error.hint,
+  });
+}
+
 export async function getTransactions(
   filters: TransactionFilters,
 ): Promise<TransactionRow[]> {
@@ -51,7 +69,10 @@ export async function getTransactions(
     ascending: false,
   }).order("created_at", { ascending: false });
 
-  if (error) throw new Error("Failed to load transactions");
+  if (error) {
+    logQueryError("getTransactions", error);
+    throw new Error("Failed to load transactions");
+  }
   return (data ?? []) as unknown as TransactionRow[];
 }
 
@@ -63,7 +84,10 @@ export async function getTotals(): Promise<Totals> {
     .eq("business_id", BUSINESS_ID)
     .in("type", [...ALLOWED_TYPES]);
 
-  if (error) throw new Error("Failed to load totals");
+  if (error) {
+    logQueryError("getTotals", error);
+    throw new Error("Failed to load totals");
+  }
 
   const rows = (data ?? []) as TotalsRow[];
   const today = todayISO();
@@ -110,6 +134,9 @@ export async function getRole(): Promise<Role> {
     .eq("actor_id", ACTOR_ID)
     .maybeSingle();
 
-  if (error) throw new Error("Failed to load role");
+  if (error) {
+    logQueryError("getRole", error);
+    throw new Error("Failed to load role");
+  }
   return data?.role === "owner" ? "owner" : "staff";
 }
