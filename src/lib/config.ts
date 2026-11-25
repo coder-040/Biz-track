@@ -1,49 +1,51 @@
-function required(name: string, value: string | undefined): string {
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
-}
+export const DEMO_BUSINESS_ID = "11111111-1111-4111-8111-111111111111";
+export const DEMO_ACTOR_ID = "22222222-2222-4222-8222-222222222222";
 
-function supabaseUrl(name: string, value: string | undefined): string {
-  const raw = required(name, value);
-  let parsed: URL;
-
+function supabaseOrigin(raw: string | undefined): string {
+  if (!raw) return "";
   try {
-    parsed = new URL(raw);
+    return new URL(raw).origin;
   } catch {
-    throw new Error(`${name} must be a valid URL`);
+    return raw;
   }
-
-  if (parsed.pathname !== "/" || parsed.search || parsed.hash) {
-    throw new Error(
-      `${name} must be the project API origin only (for example ` +
-        `https://<project-ref>.supabase.co). Do not include /rest/v1 or a dashboard path.`,
-    );
-  }
-
-  return parsed.origin;
 }
 
-export const SUPABASE_URL = supabaseUrl(
-  "NEXT_PUBLIC_SUPABASE_URL",
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
+export const SUPABASE_URL = supabaseOrigin(
+  process.env.NEXT_PUBLIC_SUPABASE_URL?.trim(),
 );
 
-export const SUPABASE_ANON_KEY = required(
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-);
+export const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || "";
 
-export const BUSINESS_ID = required(
-  "NEXT_PUBLIC_BIZTRACK_BUSINESS_ID",
-  process.env.NEXT_PUBLIC_BIZTRACK_BUSINESS_ID,
-);
+export const BUSINESS_ID =
+  process.env.NEXT_PUBLIC_BIZTRACK_BUSINESS_ID?.trim() || DEMO_BUSINESS_ID;
 
-export const ACTOR_ID = required(
-  "NEXT_PUBLIC_BIZTRACK_ACTOR_ID",
-  process.env.NEXT_PUBLIC_BIZTRACK_ACTOR_ID,
-);
+export const ACTOR_ID =
+  process.env.NEXT_PUBLIC_BIZTRACK_ACTOR_ID?.trim() || DEMO_ACTOR_ID;
 
 export const ACTOR_NAME =
   process.env.NEXT_PUBLIC_BIZTRACK_ACTOR_NAME?.trim() || null;
+
+export interface SupabaseConfig {
+  url: string;
+  anonKey: string;
+}
+
+export function getSupabaseConfig(): SupabaseConfig | null {
+  const url = SUPABASE_URL;
+  const anonKey = SUPABASE_ANON_KEY;
+
+  if (!url || !anonKey) return null;
+
+  return { url, anonKey };
+}
+
+export function isSupabaseConfigured(): boolean {
+  return getSupabaseConfig() !== null;
+}
+
+export type DataSource = "supabase" | "demo";
+
+export function getDataSource(): DataSource {
+  return isSupabaseConfigured() ? "supabase" : "demo";
+}
