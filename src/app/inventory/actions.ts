@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import type { ActionState } from "@/lib/action-state"
+import { ACTOR_ID, ACTOR_NAME, BUSINESS_ID } from "@/lib/config"
 import type { StockMovementType } from "@/lib/inventory"
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 
@@ -34,6 +35,30 @@ function fail(message: string): ActionState {
   return { status: "error", message }
 }
 
+async function writeInventoryAudit(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  entityId: string,
+  action: "insert" | "update",
+  changes: { before: unknown | null; after: unknown | null },
+): Promise<string | null> {
+  try {
+    const { error } = await supabase.from("audit_log").insert({
+      business_id: BUSINESS_ID,
+      entity_type: "product",
+      entity_id: entityId,
+      action,
+      actor_id: ACTOR_ID,
+      actor_name: ACTOR_NAME,
+      changes,
+    })
+
+    return error ? `Audit logging failed: ${error.message}` : null
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error"
+    return `Audit logging failed: ${message}`
+  }
+}
+
 function databaseMessage(error: { code?: string; message: string }): string {
   if (error.code === "23505") {
     return "That SKU is already used by another product."
@@ -43,7 +68,7 @@ function databaseMessage(error: { code?: string; message: string }): string {
     error.code === "PGRST202" ||
     error.message.includes("record_stock_movement")
   ) {
-    return "The record_stock_movement database function is missing. Run that function definition from supabase/schema.sql in the Supabase SQL editor, then try again."
+    return "The stock movement database function is missing. Run the latest supabase/schema.sql in the Supabase SQL editor, then try again."
   }
 
   return error.message
@@ -62,6 +87,11 @@ export async function createProduct(
   const sellingPrice = numberValue(formData, "selling_price")
   const currentStock = numberValue(formData, "current_stock")
   const minStock = numberValue(formData, "min_stock")
+  const numericInputs = ["purchase_price", "selling_price", "current_stock", "min_stock"]
+  const invalidPrecision = numericInputs.some((key) => {
+    const value = text(formData, key)
+    return value !== "" && !/^\d+(\.\d{1,2})?$/.test(value)
+  })
 
   if (!name) {
     return fail("Product name is required.")
@@ -76,6 +106,10 @@ export async function createProduct(
     return fail("Prices and stock values must be valid numbers.")
   }
 
+  if (invalidPrecision) {
+    return fail("Prices and stock values must have at most 2 decimal places.")
+  }
+
   if (
     purchasePrice < 0 ||
     sellingPrice < 0 ||
@@ -85,32 +119,60 @@ export async function createProduct(
     return fail("Prices and stock values cannot be negative.")
   }
 
+  if ([purchasePrice, sellingPrice, currentStock, minStock].some((value) => value > 9999999999.99)) {
+    return fail("Prices and stock values exceed the database limit.")
+  }
+
   if (supplierId && !UUID_PATTERN.test(supplierId)) {
     return fail("Select a valid supplier.")
   }
 
   try {
     const supabase = createServerSupabaseClient()
-    const { error } = await supabase.from("products").insert({
-      name,
-      sku,
-      category,
-      purchase_price: purchasePrice,
-      selling_price: sellingPrice,
-      current_stock: currentStock,
-      min_stock: minStock,
-      supplier_id: supplierId,
-      is_active: true,
-    })
+    if (supplierId) {
+      const { data: supplier, error: supplierError } = await supabase
+        .from("parties")
+        .select("id")
+        .eq("business_id", BUSINESS_ID)
+        .eq("id", supplierId)
+        .in("type", ["supplier", "both"])
+        .maybeSingle()
+
+      if (supplierError) return fail("Could not verify the selected supplier.")
+      if (!supplier) return fail("Select a supplier in this business.")
+    }
+
+    const { data: created, error } = await supabase
+      .from("products")
+      .insert({
+        business_id: BUSINESS_ID,
+        name,
+        sku,
+        category,
+        purchase_price: purchasePrice,
+        selling_price: sellingPrice,
+        current_stock: currentStock,
+        min_stock: minStock,
+        supplier_id: supplierId,
+        is_active: true,
+      })
+      .select("*")
+      .single()
 
     if (error) {
       return fail(databaseMessage(error))
     }
 
+    const auditWarning = await writeInventoryAudit(
+      supabase,
+      created.id,
+      "insert",
+      { before: null, after: created },
+    )
     revalidatePath("/inventory")
     return {
       status: "success",
-      message: `${name} was added to inventory.`,
+      message: `${name} was added to inventory.${auditWarning ? ` ${auditWarning}` : ""}`,
     }
   } catch (error) {
     return fail(
@@ -143,7 +205,14 @@ export async function recordStockMovement(
     return fail("Quantity must be greater than zero.")
   }
 
-  if (!Number.isFinite(unitCost) || unitCost < 0) {
+  if (
+    !/^\d+(\.\d{1,2})?$/.test(text(formData, "quantity")) ||
+    !/^\d*(\.\d{1,2})?$/.test(text(formData, "unit_cost") || "0")
+  ) {
+    return fail("Quantity and unit cost must have at most 2 decimal places.")
+  }
+
+  if (!Number.isFinite(unitCost) || unitCost < 0 || unitCost > 9999999999.99) {
     return fail("Unit cost must be zero or greater.")
   }
 
@@ -168,6 +237,7 @@ export async function recordStockMovement(
   try {
     const supabase = createServerSupabaseClient()
     const { error } = await supabase.rpc("record_stock_movement", {
+      p_business_id: BUSINESS_ID,
       p_product_id: productId,
       p_type: type,
       p_quantity: quantity,
@@ -175,6 +245,8 @@ export async function recordStockMovement(
       p_reason: reason,
       p_transaction_id: transactionId,
       p_adjustment_direction: adjustmentDirection,
+      p_actor_id: ACTOR_ID,
+      p_actor_name: ACTOR_NAME,
     })
 
     if (error) {
@@ -204,22 +276,42 @@ async function setProductActive(
 
   try {
     const supabase = createServerSupabaseClient()
-    const { error } = await supabase
+    const { data: before, error: readError } = await supabase
+      .from("products")
+      .select("*")
+      .eq("business_id", BUSINESS_ID)
+      .eq("id", productId)
+      .maybeSingle()
+
+    if (readError) return fail(databaseMessage(readError))
+    if (!before) return fail("Product not found.")
+
+    const { data: after, error } = await supabase
       .from("products")
       .update({ is_active: isActive })
+      .eq("business_id", BUSINESS_ID)
       .eq("id", productId)
+      .select("*")
+      .single()
 
     if (error) {
       return fail(databaseMessage(error))
     }
 
+    const auditWarning = await writeInventoryAudit(
+      supabase,
+      productId,
+      "update",
+      { before, after },
+    )
+
     revalidatePath("/inventory")
     revalidatePath(`/inventory/${productId}`)
     return {
       status: "success",
-      message: isActive
+      message: `${isActive
         ? "Product restored to active inventory."
-        : "Product archived. Its history is still available.",
+        : "Product archived. Its history is still available."}${auditWarning ? ` ${auditWarning}` : ""}`,
     }
   } catch (error) {
     return fail(

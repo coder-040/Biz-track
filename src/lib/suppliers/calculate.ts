@@ -109,12 +109,15 @@ function isHttpUrl(value: string): boolean {
 export function validateAmountInput(raw: string): string | null {
   const value = raw.trim();
   if (!value) return "Enter an amount.";
+  if (!/^\d+(\.\d{1,2})?$/.test(value)) {
+    return "Amount must have at most 2 decimal places.";
+  }
 
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount <= 0) {
     return "Amount must be greater than zero.";
   }
-  if (amount > 99_999_999) {
+  if (amount > 9_999_999_999.99) {
     return "Amount is too large for this ledger.";
   }
   return null;

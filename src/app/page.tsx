@@ -77,7 +77,7 @@ export default async function DashboardPage() {
 
   if (error || !data) {
     return (
-      <div className="min-h-screen bg-[#F8F6F2] flex items-center justify-center p-4">
+      <main className="flex min-h-[calc(100vh-3.75rem)] w-full items-center justify-center p-4">
         <Card className="w-full max-w-md rounded-2xl border-stone-200">
           <CardHeader>
             <CardTitle className="text-destructive flex items-center gap-2">
@@ -94,7 +94,7 @@ export default async function DashboardPage() {
             </p>
           </CardContent>
         </Card>
-      </div>
+      </main>
     );
   }
 
@@ -109,7 +109,6 @@ export default async function DashboardPage() {
       overdueSuppliers={data.overdueSuppliers}
       customerBalances={data.customerBalances}
       supplierBalances={data.supplierBalances}
-      todayLabel={todayLabel}
     >
       <div className="space-y-6">
         {/* ── Greeting & Status Bar ─────────────────────────────────── */}

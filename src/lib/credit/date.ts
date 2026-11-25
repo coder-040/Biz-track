@@ -1,3 +1,5 @@
+export { addDaysISO } from "@/lib/date";
+
 export function todayISO(now: Date = new Date()): string {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -15,10 +17,4 @@ export function isISODate(value: unknown): value is string {
     !Number.isNaN(date.getTime()) &&
     date.toISOString().slice(0, 10) === value
   );
-}
-
-export function addDaysISO(dateISO: string, days: number): string {
-  const date = new Date(`${dateISO}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
 }

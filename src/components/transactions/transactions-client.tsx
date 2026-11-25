@@ -107,9 +107,17 @@ function isHttpUrl(value: string): boolean {
 }
 
 function validateForm(form: FormState): string | null {
-  const amount = Number(form.amount);
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return "Amount must be greater than zero.";
+  const amountText = form.amount.trim();
+  const amount = Number(amountText);
+  if (
+    !/^\d+(\.\d{1,2})?$/.test(amountText) ||
+    !Number.isFinite(amount) ||
+    amount <= 0
+  ) {
+    return "Amount must be greater than zero with at most 2 decimal places.";
+  }
+  if (amount > 9_999_999_999.99) {
+    return "Amount is too large for this ledger.";
   }
   if (!isISODate(form.transaction_date)) {
     return "Enter a valid transaction date.";

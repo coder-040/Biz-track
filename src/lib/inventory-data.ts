@@ -1,3 +1,4 @@
+import { BUSINESS_ID } from "@/lib/config"
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 import {
   calculateInventoryValue,
@@ -18,10 +19,15 @@ export async function getInventoryOverview(): Promise<InventoryOverview> {
   const supabase = createServerSupabaseClient()
 
   const [productsResult, suppliersResult] = await Promise.all([
-    supabase.from("products").select("*").order("created_at", { ascending: false }),
+    supabase
+      .from("products")
+      .select("*")
+      .eq("business_id", BUSINESS_ID)
+      .order("created_at", { ascending: false }),
     supabase
       .from("parties")
       .select("id, name")
+      .eq("business_id", BUSINESS_ID)
       .in("type", ["supplier", "both"])
       .order("name", { ascending: true }),
   ])
@@ -60,6 +66,7 @@ export async function getProduct(productId: string): Promise<Product | null> {
   const { data, error } = await supabase
     .from("products")
     .select("*")
+    .eq("business_id", BUSINESS_ID)
     .eq("id", productId)
     .maybeSingle()
 
@@ -77,6 +84,7 @@ export async function getStockMovements(
   const { data, error } = await supabase
     .from("stock_movements")
     .select("*")
+    .eq("business_id", BUSINESS_ID)
     .eq("product_id", productId)
     .order("created_at", { ascending: false })
 

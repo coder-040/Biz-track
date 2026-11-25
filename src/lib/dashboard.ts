@@ -1,19 +1,14 @@
-import { createClient } from "@supabase/supabase-js";
 import { connection } from "next/server";
+import { BUSINESS_ID } from "@/lib/config";
+import { addDaysISO, todayISOInTimeZone } from "@/lib/date";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-// Server-side client using env vars (safe for server components)
-function getServerClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type Transaction = {
   id: string;
-  type: "income" | "expense";
+  type: string;
   party_id: string | null;
   amount: number;
   category: string;
@@ -31,6 +26,7 @@ export type PartyBalance = {
   party_name: string;
   balance: number;
   due_date: string | null;
+  overdue_amount?: number;
 };
 
 export type LowStockProduct = {
@@ -81,23 +77,12 @@ export type DashboardData = {
   weeklyFlow: WeeklyDay[];
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function todayISO(): string {
-  // Use Nepal timezone offset (+05:45)
-  const now = new Date();
-  const nepalOffset = 5 * 60 + 45; // minutes
-  const utcMinutes = now.getTime() / 60000 + now.getTimezoneOffset();
-  const nepalDate = new Date((utcMinutes + nepalOffset) * 60000);
-  return nepalDate.toISOString().slice(0, 10);
-}
-
 // ─── Main data fetch ──────────────────────────────────────────────────────────
 
 export async function getDashboardData(): Promise<DashboardData> {
   await connection();
-  const db = getServerClient();
-  const today = todayISO();
+  const db = createServerSupabaseClient();
+  const today = todayISOInTimeZone("Asia/Kathmandu");
 
   // Run all independent queries in parallel
   const [
@@ -114,20 +99,23 @@ export async function getDashboardData(): Promise<DashboardData> {
     db
       .from("transactions")
       .select("type, amount")
+      .eq("business_id", BUSINESS_ID)
       .eq("transaction_date", today),
 
     // All income/expense transactions for cash & bank/online balance
     db
       .from("transactions")
       .select("type, amount, payment_method")
+      .eq("business_id", BUSINESS_ID)
       .in("type", ["income", "expense"]),
 
     // All transactions for receivables/payables computation
     db
       .from("transactions")
       .select(
-        "type, party_id, amount, due_date, payment_method"
+        "id, type, party_id, amount, due_date, payment_method, transaction_date, created_at"
       )
+      .eq("business_id", BUSINESS_ID)
       .in("type", [
         "customer_credit_sale",
         "customer_payment",
@@ -139,6 +127,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     db
       .from("products")
       .select("id, name, current_stock, min_stock, purchase_price")
+      .eq("business_id", BUSINESS_ID)
       .eq("is_active", true),
 
     // 5 recent transactions
@@ -147,6 +136,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       .select(
         "id, type, party_id, amount, category, payment_method, description, due_date, transaction_date, created_at, parties(name)"
       )
+      .eq("business_id", BUSINESS_ID)
       .order("transaction_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(5),
@@ -157,25 +147,35 @@ export async function getDashboardData(): Promise<DashboardData> {
       .select(
         "id, type, party_id, amount, category, payment_method, description, due_date, transaction_date, created_at, parties(name)"
       )
+      .eq("business_id", BUSINESS_ID)
       .gte("due_date", today)
       .gt("amount", 0)
       .order("due_date", { ascending: true })
       .limit(5),
 
     // All parties (for name lookup)
-    db.from("parties").select("id, name, type"),
+    db.from("parties").select("id, name, type").eq("business_id", BUSINESS_ID),
 
     // Weekly income/expense (past 7 days)
     db
       .from("transactions")
       .select("type, amount, transaction_date")
-      .gte("transaction_date", (() => {
-        const d = new Date(today + "T00:00:00");
-        d.setDate(d.getDate() - 6);
-        return d.toISOString().slice(0, 10);
-      })())
+      .eq("business_id", BUSINESS_ID)
+      .gte("transaction_date", addDaysISO(today, -6))
       .in("type", ["income", "expense"]),
   ]);
+
+  const queryError = [
+    todayTxResult.error,
+    cashBankTxResult.error,
+    allTxResult.error,
+    productsResult.error,
+    recentTxResult.error,
+    remindersTxResult.error,
+    partiesResult.error,
+    weeklyTxResult.error,
+  ].find(Boolean);
+  if (queryError) throw new Error("Failed to load dashboard data.");
 
   // ── Today's income/expense ──────────────────────────────────────────────────
   let todayIncome = 0;
@@ -199,12 +199,11 @@ export async function getDashboardData(): Promise<DashboardData> {
   if (cashBankTxResult.data) {
     for (const tx of cashBankTxResult.data) {
       const amt = Number(tx.amount) || 0;
-      if (tx.type === "income") {
-        if (tx.payment_method === "cash") cashBalance += amt;
-        else bankOnlineBalance += amt;
-      } else if (tx.type === "expense") {
-        if (tx.payment_method === "cash") cashBalance -= amt;
-        else bankOnlineBalance -= amt;
+      const sign = tx.type === "income" ? 1 : -1;
+      if (tx.payment_method === "cash") {
+        cashBalance += sign * amt;
+      } else if (["bank", "qr", "online"].includes(tx.payment_method ?? "")) {
+        bankOnlineBalance += sign * amt;
       }
     }
   }
@@ -219,80 +218,126 @@ export async function getDashboardData(): Promise<DashboardData> {
     }
   }
 
-  const customerNet = new Map<string, { balance: number; due_date: string | null }>();
-  const supplierNet = new Map<string, { balance: number; due_date: string | null }>();
+  type Sale = {
+    id: string;
+    amount: number;
+    due_date: string | null;
+    transaction_date: string;
+    created_at: string | null;
+  };
+  const customerNet = new Map<string, { sales: Sale[]; payments: number }>();
+  const supplierNet = new Map<
+    string,
+    { payable: number; pastDueDates: string[] }
+  >();
 
-  if (allTxResult.data) {
-    for (const tx of allTxResult.data) {
-      if (!tx.party_id) continue;
-      const amt = Number(tx.amount) || 0;
-      const party = partyMap.get(tx.party_id);
-      if (!party) continue;
+  for (const tx of allTxResult.data ?? []) {
+    if (!tx.party_id) continue;
+    const amt = Number(tx.amount) || 0;
+    const party = partyMap.get(tx.party_id);
+    if (!party) continue;
 
-      if (party.type === "customer") {
-        const cur = customerNet.get(tx.party_id) ?? { balance: 0, due_date: null };
-        if (tx.type === "customer_credit_sale") {
-          cur.balance += amt;
-          if (tx.due_date && (!cur.due_date || tx.due_date < cur.due_date)) {
-            cur.due_date = tx.due_date;
-          }
-        } else if (tx.type === "customer_payment") {
-          cur.balance -= amt;
-        }
-        customerNet.set(tx.party_id, cur);
-      } else if (party.type === "supplier") {
-        const cur = supplierNet.get(tx.party_id) ?? { balance: 0, due_date: null };
-        if (tx.type === "supplier_purchase") {
-          cur.balance += amt;
-          if (tx.due_date && (!cur.due_date || tx.due_date < cur.due_date)) {
-            cur.due_date = tx.due_date;
-          }
-        } else if (tx.type === "supplier_payment") {
-          cur.balance -= amt;
-        }
-        supplierNet.set(tx.party_id, cur);
+    if (party.type === "customer" || party.type === "both") {
+      const current = customerNet.get(tx.party_id) ?? { sales: [], payments: 0 };
+      if (tx.type === "customer_credit_sale") {
+        current.sales.push({
+          id: tx.id,
+          amount: amt,
+          due_date: tx.due_date,
+          transaction_date: tx.transaction_date,
+          created_at: tx.created_at,
+        });
+      } else if (tx.type === "customer_payment") {
+        current.payments += amt;
       }
+      customerNet.set(tx.party_id, current);
+    }
+
+    if (party.type === "supplier" || party.type === "both") {
+      const current = supplierNet.get(tx.party_id) ?? {
+        payable: 0,
+        pastDueDates: [],
+      };
+      if (tx.type === "supplier_purchase" && tx.payment_method === "credit") {
+        current.payable += amt;
+        if (tx.due_date && tx.due_date < today) {
+          current.pastDueDates.push(tx.due_date);
+        }
+      } else if (tx.type === "supplier_payment") {
+        current.payable -= amt;
+      }
+      supplierNet.set(tx.party_id, current);
     }
   }
 
   const customerBalances: PartyBalance[] = [];
   let totalReceivables = 0;
-  for (const [party_id, { balance, due_date }] of customerNet.entries()) {
+  for (const [party_id, account] of customerNet.entries()) {
+    const sortedSales = [...account.sales].sort((a, b) => {
+      const dueA = a.due_date ?? "9999-12-31";
+      const dueB = b.due_date ?? "9999-12-31";
+      return dueA.localeCompare(dueB) ||
+        a.transaction_date.localeCompare(b.transaction_date) ||
+        (a.created_at ?? "").localeCompare(b.created_at ?? "") ||
+        a.id.localeCompare(b.id);
+    });
+    let remainingPayments = account.payments;
+    let overdueAmount = 0;
+    let overdueDate: string | null = null;
+    let nextDueDate: string | null = null;
+    const totalCredit = sortedSales.reduce((sum, sale) => sum + sale.amount, 0);
+    const balance = Math.max(0, Math.round((totalCredit - account.payments + Number.EPSILON) * 100) / 100);
+
+    for (const sale of sortedSales) {
+      const applied = Math.min(remainingPayments, sale.amount);
+      remainingPayments = Math.max(0, remainingPayments - applied);
+      const outstanding = Math.max(0, sale.amount - applied);
+      if (outstanding <= 0 || !sale.due_date) continue;
+      if (sale.due_date < today) {
+        overdueAmount += outstanding;
+        if (!overdueDate || sale.due_date < overdueDate) overdueDate = sale.due_date;
+      } else if (!nextDueDate || sale.due_date < nextDueDate) {
+        nextDueDate = sale.due_date;
+      }
+    }
+
     if (balance > 0) {
       totalReceivables += balance;
       customerBalances.push({
         party_id,
         party_name: partyMap.get(party_id)?.name ?? "Unknown",
         balance,
-        due_date,
+        due_date: overdueDate ?? nextDueDate,
+        overdue_amount: overdueAmount,
       });
     }
   }
 
   const supplierBalances: PartyBalance[] = [];
   let totalPayables = 0;
-  for (const [party_id, { balance, due_date }] of supplierNet.entries()) {
-    if (balance > 0) {
-      totalPayables += balance;
-      supplierBalances.push({
-        party_id,
-        party_name: partyMap.get(party_id)?.name ?? "Unknown",
-        balance,
-        due_date,
-      });
-    }
+  for (const [party_id, account] of supplierNet.entries()) {
+    const balance = Math.max(0, Math.round((account.payable + Number.EPSILON) * 100) / 100);
+    if (balance <= 0) continue;
+
+    const pastDueDates = account.pastDueDates.sort();
+    totalPayables += balance;
+    supplierBalances.push({
+      party_id,
+      party_name: partyMap.get(party_id)?.name ?? "Unknown",
+      balance,
+      due_date: pastDueDates[0] ?? null,
+      overdue_amount: pastDueDates.length > 0 ? balance : 0,
+    });
   }
 
-  // Sort by balance desc
   customerBalances.sort((a, b) => b.balance - a.balance);
   supplierBalances.sort((a, b) => b.balance - a.balance);
 
-  // ── Overdue (past due_date) ────────────────────────────────────────────────
   const overdueCustomers = customerBalances.filter(
-    (p) => p.due_date && p.due_date < today && p.balance > 0
+    (party) => party.overdue_amount && party.overdue_amount > 0,
   );
   const overdueSuppliers = supplierBalances.filter(
-    (p) => p.due_date && p.due_date < today && p.balance > 0
+    (party) => party.due_date && party.due_date < today,
   );
 
   // ── Inventory ─────────────────────────────────────────────────────────────
@@ -324,9 +369,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   // Build 7 days ending today
   const weekDates: string[] = [];
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(today + "T00:00:00");
-    d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = addDaysISO(today, -i);
     weekDates.push(iso);
     weeklyMap.set(iso, { income: 0, expense: 0 });
   }
@@ -342,7 +385,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   }
 
   const weeklyFlow: WeeklyDay[] = weekDates.map((date) => {
-    const dow = new Date(date + "T00:00:00").getDay();
+    const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
     const entry = weeklyMap.get(date)!;
     return {
       label: EN_DAYS[dow],

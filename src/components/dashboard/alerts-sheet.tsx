@@ -130,7 +130,7 @@ export function AlertsSheet({
                       </p>
                     </div>
                     <span className="font-semibold text-red-600">
-                      {formatNPR(c.balance)}
+                      {formatNPR(c.overdue_amount ?? c.balance)}
                     </span>
                   </div>
                 ))}

@@ -187,7 +187,7 @@ export function AlertsPanel({
                           )}
                         </div>
                         <p className="text-xs font-bold text-red-600 mt-1">
-                          {formatNPR(c.balance)}
+                          {formatNPR(isOverdue ? c.overdue_amount ?? c.balance : c.balance)}
                         </p>
                       </div>
                       <span className="text-[11px] font-medium text-stone-600 border border-stone-200 bg-white px-2.5 py-1 rounded-lg shrink-0">

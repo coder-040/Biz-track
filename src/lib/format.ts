@@ -13,23 +13,9 @@ const dateFormatter = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
 });
 
-/**
- * Format a number with Indian-style comma grouping.
- * e.g. 123456 → "Rs 1,23,456"
- */
+/** Format NPR with Indian-style grouping and the ledger's two-decimal precision. */
 export function formatNPR(amount: number): string {
-  const abs = Math.abs(Math.round(amount));
-  const str = String(abs);
-  let result = "";
-  if (str.length <= 3) {
-    result = str;
-  } else {
-    const last3 = str.slice(-3);
-    const rest = str.slice(0, -3);
-    const withCommas = rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",");
-    result = withCommas + "," + last3;
-  }
-  return (amount < 0 ? "-" : "") + "Rs " + result;
+  return `Rs. ${amountFormatter.format(amount)}`;
 }
 
 export function formatCurrency(value: number): string {
