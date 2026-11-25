@@ -16,4 +16,4 @@ Give the owner a single dashboard of the business's financial and stock position
 - `products`: `id`, `name`, `current_stock`, `min_stock`, `purchase_price`, `is_active`.
 - `stock_movements`: `id`, `product_id`, `type`, `quantity`, `created_at` (for recent stock activity if shown).
 
-Schema note: this is a read-only slice over the existing tables. `supabase/schema.sql` has no business/owner/role table or column, so the view cannot assume per-business or per-role scoping is already available.
+Schema note: this is a read-only slice over the existing tables. `supabase/schema.sql` does define `businesses`, `business_members`, `audit_log` and a NOT NULL `business_id` on `parties`, `products`, `transactions` and `stock_movements`, but its RLS policies are demo-only (`anon` has full access) and the app scopes to a single configured business, so the view cannot assume per-business or per-role scoping is enforced at the DB layer.
