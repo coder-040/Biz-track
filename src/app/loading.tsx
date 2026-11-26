@@ -2,19 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Loading() {
   return (
-    <div className="min-h-screen flex bg-[#F8F6F2]">
-      {/* Sidebar skeleton */}
-      <div className="hidden lg:block w-56 shrink-0 bg-[#0C3B37] p-4 space-y-4">
-        <Skeleton className="h-10 w-full bg-white/10 rounded-xl" />
-        <Skeleton className="h-10 w-full bg-[#F4C44E]/30 rounded-xl" />
-        <div className="space-y-2 pt-4">
-          <Skeleton className="h-9 w-full bg-white/10 rounded-xl" />
-          <Skeleton className="h-9 w-full bg-white/10 rounded-xl" />
-          <Skeleton className="h-9 w-full bg-white/10 rounded-xl" />
-          <Skeleton className="h-9 w-full bg-white/10 rounded-xl" />
-        </div>
-      </div>
-
+    <div className="min-h-[calc(100vh-3.25rem)] bg-[#F8F6F2]">
       {/* Main skeleton */}
       <div className="flex-1 p-6 max-w-7xl mx-auto space-y-6">
         <Skeleton className="h-12 w-full rounded-xl" />
