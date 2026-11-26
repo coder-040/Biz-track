@@ -124,7 +124,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 BizTrack General Store
               </p>
               <p className="truncate text-[10px] text-emerald-200/70">
-                Ason, Kathmandu
+                Pokhara
               </p>
             </div>
           </div>
