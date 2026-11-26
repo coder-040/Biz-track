@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RequiredMark } from "@/components/ui/required-mark";
-import { ACTOR_ID, ACTOR_NAME, BUSINESS_ID } from "@/lib/config";
+import { useBusinessContext } from "@/components/auth/business-context";
+import { can } from "@/lib/auth/permissions";
 import { supabase } from "@/lib/supabase/client";
 import { writeAudit } from "@/lib/transactions/audit";
 import { isISODate, todayISO } from "@/lib/transactions/date";
@@ -40,6 +41,14 @@ function isHttpUrl(value: string): boolean {
 
 export function QuickAddTransactionDialog() {
   const router = useRouter();
+  const { context } = useBusinessContext();
+  const businessId = context?.activeBusinessId;
+  const actorId = context?.user.id;
+  const actorName = context?.user.fullName || context?.user.email || null;
+  const canManage = Boolean(
+    context?.activeRole &&
+      can(context.activeRole, "manage_finances", context.activePermissions),
+  );
   const formRef = useRef<HTMLFormElement>(null);
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<TransactionType>("income");
@@ -90,13 +99,17 @@ export function QuickAddTransactionDialog() {
       toast.error("Bill URL must use http or https.");
       return;
     }
+    if (!canManage || !businessId || !actorId) {
+      toast.error("You do not have permission to manage financial records.");
+      return;
+    }
 
     setBusy(true);
     try {
       const { data, error: insertError } = await supabase
         .from("transactions")
         .insert({
-          business_id: BUSINESS_ID,
+          business_id: businessId,
           type,
           amount,
           transaction_date: transactionDate,
@@ -113,12 +126,12 @@ export function QuickAddTransactionDialog() {
       let auditWarning: string | null = null;
       try {
         await writeAudit({
-          businessId: BUSINESS_ID,
+          businessId,
           entityType: "transaction",
           entityId: data.id,
           action: "insert",
-          actorId: ACTOR_ID,
-          actorName: ACTOR_NAME,
+          actorId,
+          actorName,
           changes: { before: null, after: data },
         });
       } catch (auditError) {
@@ -145,6 +158,7 @@ export function QuickAddTransactionDialog() {
           <Button
             type="button"
             className="bg-white text-[#0C3B37] shadow-xs hover:bg-emerald-50"
+            disabled={!canManage}
           />
         }
       >

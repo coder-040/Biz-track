@@ -3,11 +3,14 @@
 import { revalidatePath } from "next/cache"
 
 import type { ActionState } from "@/lib/action-state"
-import { ACTOR_ID, ACTOR_NAME, BUSINESS_ID } from "@/lib/config"
+import { can } from "@/lib/auth/permissions"
+import {
+  requireBusinessContext,
+  type CurrentBusinessContext,
+} from "@/lib/auth/server"
 import { isISODate, todayISOInTimeZone } from "@/lib/date"
 import { formatCurrency } from "@/lib/format"
 import type { StockMovementType } from "@/lib/inventory"
-import { createServerSupabaseClient } from "@/lib/supabase/server"
 
 const STOCK_MOVEMENT_TYPES: StockMovementType[] = [
   "purchase",
@@ -37,19 +40,20 @@ function fail(message: string): ActionState {
 }
 
 async function writeInventoryAudit(
-  supabase: ReturnType<typeof createServerSupabaseClient>,
+  supabase: CurrentBusinessContext["supabase"],
+  businessId: string,
+  actorId: string,
   entityId: string,
   action: "insert" | "update",
   changes: { before: unknown | null; after: unknown | null },
 ): Promise<string | null> {
   try {
     const { error } = await supabase.from("audit_log").insert({
-      business_id: BUSINESS_ID,
+      business_id: businessId,
       entity_type: "product",
       entity_id: entityId,
       action,
-      actor_id: ACTOR_ID,
-      actor_name: ACTOR_NAME,
+      actor_id: actorId,
       changes,
     })
 
@@ -132,13 +136,18 @@ export async function createProduct(
     return fail("Select a valid supplier.")
   }
 
+  const context = await requireBusinessContext()
+  if (!can(context.role, "manage_inventory", context.permissions)) {
+    return fail("You do not have permission to manage inventory.")
+  }
+
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = context.supabase
     if (supplierId) {
       const { data: supplier, error: supplierError } = await supabase
         .from("parties")
         .select("id")
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", context.business.id)
         .eq("id", supplierId)
         .in("type", ["supplier", "both"])
         .maybeSingle()
@@ -150,7 +159,7 @@ export async function createProduct(
     const { data: created, error } = await supabase
       .from("products")
       .insert({
-        business_id: BUSINESS_ID,
+        business_id: context.business.id,
         name,
         sku,
         category,
@@ -170,6 +179,8 @@ export async function createProduct(
 
     const auditWarning = await writeInventoryAudit(
       supabase,
+      context.business.id,
+      context.user.id,
       created.id,
       "insert",
       { before: null, after: created },
@@ -247,10 +258,14 @@ export async function recordStockMovement(
     return fail("Related transaction ID must be a valid UUID.")
   }
 
+  const context = await requireBusinessContext()
+  if (!can(context.role, "manage_inventory", context.permissions)) {
+    return fail("You do not have permission to manage inventory.")
+  }
+
   try {
-    const supabase = createServerSupabaseClient()
-    const { error } = await supabase.rpc("record_stock_movement", {
-      p_business_id: BUSINESS_ID,
+    const { error } = await context.supabase.rpc("record_stock_movement", {
+      p_business_id: context.business.id,
       p_product_id: productId,
       p_type: type,
       p_quantity: quantity,
@@ -258,8 +273,8 @@ export async function recordStockMovement(
       p_reason: reason,
       p_transaction_id: transactionId,
       p_adjustment_direction: adjustmentDirection,
-      p_actor_id: ACTOR_ID,
-      p_actor_name: ACTOR_NAME,
+      p_actor_id: context.user.id,
+      p_actor_name: context.user.user_metadata.full_name ?? null,
     })
 
     if (error) {
@@ -351,10 +366,17 @@ export async function recordProductRestock(
     }
   }
 
+  const context = await requireBusinessContext()
+  if (
+    !can(context.role, "manage_finances", context.permissions) ||
+    !can(context.role, "manage_inventory", context.permissions)
+  ) {
+    return fail("You do not have permission to record this restock.")
+  }
+
   try {
-    const supabase = createServerSupabaseClient()
-    const { error } = await supabase.rpc("record_product_restock", {
-      p_business_id: BUSINESS_ID,
+    const { error } = await context.supabase.rpc("record_product_restock", {
+      p_business_id: context.business.id,
       p_product_id: productId,
       p_supplier_id: supplierId || null,
       p_quantity: quantity,
@@ -364,8 +386,8 @@ export async function recordProductRestock(
       p_transaction_date: transactionDate,
       p_due_date: payable > 0 ? dueDate : null,
       p_description: description,
-      p_actor_id: ACTOR_ID,
-      p_actor_name: ACTOR_NAME,
+      p_actor_id: context.user.id,
+      p_actor_name: context.user.user_metadata.full_name ?? null,
     })
 
     if (error) return fail(databaseMessage(error))
@@ -396,12 +418,17 @@ async function setProductActive(
     return fail("Select a valid product.")
   }
 
+  const context = await requireBusinessContext()
+  if (!can(context.role, "manage_inventory", context.permissions)) {
+    return fail("You do not have permission to manage inventory.")
+  }
+
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = context.supabase
     const { data: before, error: readError } = await supabase
       .from("products")
       .select("*")
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", context.business.id)
       .eq("id", productId)
       .maybeSingle()
 
@@ -411,7 +438,7 @@ async function setProductActive(
     const { data: after, error } = await supabase
       .from("products")
       .update({ is_active: isActive })
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", context.business.id)
       .eq("id", productId)
       .select("*")
       .single()
@@ -422,6 +449,8 @@ async function setProductActive(
 
     const auditWarning = await writeInventoryAudit(
       supabase,
+      context.business.id,
+      context.user.id,
       productId,
       "update",
       { before, after },

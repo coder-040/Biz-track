@@ -188,6 +188,370 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
     created_at timestamptz DEFAULT now()
 );
 
+-- Authenticated account and business metadata.
+ALTER TABLE public.businesses
+    ADD COLUMN IF NOT EXISTS business_type text,
+    ADD COLUMN IF NOT EXISTS phone text,
+    ADD COLUMN IF NOT EXISTS email text,
+    ADD COLUMN IF NOT EXISTS address text,
+    ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'NPR',
+    ADD COLUMN IF NOT EXISTS description text,
+    ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS creation_request_id uuid,
+    ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
+
+CREATE UNIQUE INDEX IF NOT EXISTS businesses_created_by_request_id_unique
+    ON public.businesses (created_by, creation_request_id);
+
+ALTER TABLE public.business_members
+    ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+    ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true,
+    ADD COLUMN IF NOT EXISTS permissions jsonb NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS invited_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS joined_at timestamptz NOT NULL DEFAULT now();
+
+ALTER TABLE public.business_members
+    DROP CONSTRAINT IF EXISTS business_members_role_check;
+
+ALTER TABLE public.business_members
+    ADD CONSTRAINT business_members_role_check
+    CHECK (role IN ('owner', 'admin', 'staff'));
+
+CREATE UNIQUE INDEX IF NOT EXISTS business_members_business_user_unique
+    ON public.business_members (business_id, user_id);
+
+CREATE TABLE IF NOT EXISTS public.user_profiles (
+    id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    full_name text NOT NULL DEFAULT '',
+    phone text,
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.business_invitations (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+    invited_email text NOT NULL CHECK (invited_email = lower(btrim(invited_email))),
+    role text NOT NULL CHECK (role IN ('admin', 'staff')),
+    token_hash text NOT NULL UNIQUE,
+    invited_by uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+    expires_at timestamptz NOT NULL,
+    accepted_user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+    accepted_at timestamptz,
+    revoked_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CHECK ((accepted_at IS NULL) = (accepted_user_id IS NULL))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS business_invitations_pending_email_unique
+    ON public.business_invitations (business_id, invited_email)
+    WHERE accepted_at IS NULL AND revoked_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS business_invitations_expiry_idx
+    ON public.business_invitations (expires_at)
+    WHERE accepted_at IS NULL AND revoked_at IS NULL;
+
+CREATE OR REPLACE FUNCTION public.create_user_profile()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    INSERT INTO public.user_profiles (id, full_name, phone)
+    VALUES (
+        NEW.id,
+        COALESCE(NULLIF(BTRIM(NEW.raw_user_meta_data ->> 'full_name'), ''), ''),
+        NULLIF(BTRIM(NEW.raw_user_meta_data ->> 'phone'), '')
+    )
+    ON CONFLICT (id) DO UPDATE
+    SET full_name = EXCLUDED.full_name,
+        phone = EXCLUDED.phone,
+        updated_at = now();
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS biztrack_create_user_profile ON auth.users;
+CREATE TRIGGER biztrack_create_user_profile
+    AFTER INSERT ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.create_user_profile();
+
+CREATE OR REPLACE FUNCTION public.is_business_member(p_business_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.business_members AS bm
+        JOIN public.businesses AS b ON b.id = bm.business_id
+        WHERE bm.business_id = p_business_id
+          AND bm.user_id = (SELECT auth.uid())
+          AND bm.is_active
+          AND b.is_active
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION public.has_business_permission(
+    p_business_id uuid,
+    p_permission text
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT COALESCE((
+        SELECT CASE
+            WHEN bm.role = 'owner' THEN true
+            WHEN p_permission IN ('transfer_ownership', 'delete_business') THEN false
+            WHEN bm.permissions ? p_permission THEN
+                bm.permissions -> p_permission = 'true'::jsonb
+            WHEN bm.role = 'admin' THEN p_permission IN (
+                'view_dashboard',
+                'view_products',
+                'manage_inventory',
+                'view_finances',
+                'manage_finances',
+                'view_reports'
+            )
+            WHEN bm.role = 'staff' THEN p_permission IN (
+                'view_products',
+                'manage_inventory'
+            )
+            ELSE false
+        END
+        FROM public.business_members AS bm
+        JOIN public.businesses AS b ON b.id = bm.business_id
+        WHERE bm.business_id = p_business_id
+          AND bm.user_id = (SELECT auth.uid())
+          AND bm.is_active
+          AND b.is_active
+    ), false);
+$$;
+
+CREATE OR REPLACE FUNCTION public.create_business_with_owner(
+    p_request_id uuid,
+    p_name text,
+    p_business_type text,
+    p_phone text,
+    p_email text,
+    p_address text,
+    p_currency text,
+    p_description text
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_user_id uuid := auth.uid();
+    v_business_id uuid;
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Authentication is required.';
+    END IF;
+
+    IF p_request_id IS NULL OR NULLIF(BTRIM(p_name), '') IS NULL THEN
+        RAISE EXCEPTION 'A request ID and business name are required.';
+    END IF;
+
+    INSERT INTO public.businesses (
+        name, business_type, phone, email, address, currency, description,
+        created_by, creation_request_id
+    ) VALUES (
+        BTRIM(p_name), NULLIF(BTRIM(p_business_type), ''),
+        NULLIF(BTRIM(p_phone), ''), NULLIF(LOWER(BTRIM(p_email)), ''),
+        NULLIF(BTRIM(p_address), ''), COALESCE(NULLIF(UPPER(BTRIM(p_currency)), ''), 'NPR'),
+        NULLIF(BTRIM(p_description), ''), v_user_id, p_request_id
+    )
+    ON CONFLICT (created_by, creation_request_id) DO NOTHING;
+
+    SELECT id INTO v_business_id
+    FROM public.businesses
+    WHERE created_by = v_user_id
+      AND creation_request_id = p_request_id;
+
+    IF v_business_id IS NULL THEN
+        RAISE EXCEPTION 'Could not create the business.';
+    END IF;
+
+    INSERT INTO public.business_members (
+        business_id, actor_id, user_id, role, is_active
+    ) VALUES (
+        v_business_id, v_user_id::text, v_user_id, 'owner', true
+    )
+    ON CONFLICT (business_id, user_id) DO NOTHING;
+
+    RETURN v_business_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.accept_business_invitation(
+    p_token_hash text
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_user_id uuid := auth.uid();
+    v_invitation public.business_invitations%ROWTYPE;
+    v_user_email text;
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Authentication is required.';
+    END IF;
+
+    SELECT LOWER(COALESCE(email, ''))
+    INTO v_user_email
+    FROM auth.users
+    WHERE id = v_user_id;
+
+    SELECT *
+    INTO v_invitation
+    FROM public.business_invitations
+    WHERE token_hash = p_token_hash;
+
+    IF v_invitation.id IS NULL THEN
+        RAISE EXCEPTION 'This invitation is invalid.';
+    END IF;
+    IF v_invitation.accepted_at IS NOT NULL THEN
+        RAISE EXCEPTION 'This invitation has already been accepted.';
+    END IF;
+    IF v_invitation.revoked_at IS NOT NULL THEN
+        RAISE EXCEPTION 'This invitation has been revoked.';
+    END IF;
+    IF v_invitation.expires_at <= now() THEN
+        RAISE EXCEPTION 'This invitation has expired.';
+    END IF;
+    IF v_invitation.invited_email <> v_user_email THEN
+        RAISE EXCEPTION 'Sign in with the email address that received this invitation.';
+    END IF;
+
+    INSERT INTO public.business_members (
+        business_id,
+        actor_id,
+        user_id,
+        role,
+        is_active,
+        invited_by,
+        joined_at
+    ) VALUES (
+        v_invitation.business_id,
+        v_user_id::text,
+        v_user_id,
+        v_invitation.role,
+        true,
+        v_invitation.invited_by,
+        now()
+    )
+    ON CONFLICT (business_id, user_id) DO UPDATE
+    SET role = EXCLUDED.role,
+        is_active = true,
+        invited_by = EXCLUDED.invited_by,
+        joined_at = COALESCE(public.business_members.joined_at, now());
+
+    UPDATE public.business_invitations
+    SET accepted_user_id = v_user_id,
+        accepted_at = now()
+    WHERE id = v_invitation.id;
+
+    RETURN v_invitation.business_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_business_invitation(
+    p_token_hash text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_invitation public.business_invitations%ROWTYPE;
+    v_business_name text;
+    v_user_email text;
+BEGIN
+    SELECT *
+    INTO v_invitation
+    FROM public.business_invitations
+    WHERE token_hash = p_token_hash;
+
+    IF v_invitation.id IS NULL THEN
+        RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    IF v_invitation.revoked_at IS NOT NULL THEN
+        RETURN jsonb_build_object('status', 'revoked');
+    END IF;
+    IF v_invitation.accepted_at IS NOT NULL THEN
+        RETURN jsonb_build_object('status', 'accepted');
+    END IF;
+    IF v_invitation.expires_at <= now() THEN
+        RETURN jsonb_build_object('status', 'expired');
+    END IF;
+
+    IF auth.uid() IS NOT NULL THEN
+        SELECT LOWER(COALESCE(email, ''))
+        INTO v_user_email
+        FROM auth.users
+        WHERE id = auth.uid();
+        IF v_user_email <> v_invitation.invited_email THEN
+            RETURN jsonb_build_object('status', 'email_mismatch');
+        END IF;
+    END IF;
+
+    SELECT name INTO v_business_name
+    FROM public.businesses
+    WHERE id = v_invitation.business_id;
+
+    RETURN jsonb_build_object(
+        'status', 'pending',
+        'businessName', v_business_name,
+        'invitedEmail', v_invitation.invited_email,
+        'role', v_invitation.role,
+        'expiresAt', v_invitation.expires_at
+    );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.set_authenticated_audit_actor()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'An authenticated user is required for audit entries.';
+    END IF;
+
+    NEW.actor_id := auth.uid()::text;
+    SELECT full_name INTO NEW.actor_name
+    FROM public.user_profiles
+    WHERE id = auth.uid();
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS set_authenticated_audit_actor ON public.audit_log;
+CREATE TRIGGER set_authenticated_audit_actor
+    BEFORE INSERT ON public.audit_log
+    FOR EACH ROW
+    EXECUTE FUNCTION public.set_authenticated_audit_actor();
+
 -- ==========================================
 -- DEMO SEED
 -- ==========================================
@@ -314,16 +678,31 @@ CREATE TRIGGER prevent_party_delete_with_open_credit
     EXECUTE FUNCTION public.prevent_party_delete_with_open_credit();
 
 -- ==========================================
--- ROW LEVEL SECURITY (DEMO ONLY)
+-- AUTHENTICATED ROW LEVEL SECURITY
 -- ==========================================
+
+ALTER TABLE public.businesses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.business_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.business_invitations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.parties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.supplier_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.supplier_order_payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
 
 DO $$
 DECLARE
     tbl text;
+    policy_row record;
 BEGIN
     FOREACH tbl IN ARRAY ARRAY[
         'businesses',
         'business_members',
+        'user_profiles',
+        'business_invitations',
         'parties',
         'products',
         'transactions',
@@ -333,32 +712,195 @@ BEGIN
         'audit_log'
     ]
     LOOP
-        EXECUTE format(
-            'ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',
-            tbl
-        );
+        EXECUTE format('DROP POLICY IF EXISTS biztrack_demo_anon_all ON public.%I', tbl);
+        EXECUTE format('DROP POLICY IF EXISTS biztrack_authenticated_all ON public.%I', tbl);
+    END LOOP;
 
+    FOR policy_row IN
+        SELECT * FROM (VALUES
+            ('businesses', 'business_member_read'),
+            ('businesses', 'business_settings_update'),
+            ('business_members', 'member_read'),
+            ('user_profiles', 'profile_read'),
+            ('user_profiles', 'profile_update'),
+            ('business_invitations', 'invitation_read'),
+            ('business_invitations', 'invitation_insert'),
+            ('business_invitations', 'invitation_update'),
+            ('parties', 'party_read'),
+            ('parties', 'party_insert'),
+            ('parties', 'party_update'),
+            ('parties', 'party_delete'),
+            ('products', 'product_read'),
+            ('products', 'product_insert'),
+            ('products', 'product_update'),
+            ('products', 'product_delete'),
+            ('transactions', 'transaction_read'),
+            ('transactions', 'transaction_insert'),
+            ('transactions', 'transaction_update'),
+            ('transactions', 'transaction_delete'),
+            ('supplier_orders', 'supplier_order_read'),
+            ('supplier_orders', 'supplier_order_insert'),
+            ('supplier_orders', 'supplier_order_update'),
+            ('supplier_orders', 'supplier_order_delete'),
+            ('supplier_order_payments', 'supplier_order_payment_read'),
+            ('supplier_order_payments', 'supplier_order_payment_insert'),
+            ('supplier_order_payments', 'supplier_order_payment_update'),
+            ('supplier_order_payments', 'supplier_order_payment_delete'),
+            ('stock_movements', 'stock_movement_read'),
+            ('stock_movements', 'stock_movement_insert'),
+            ('audit_log', 'audit_read'),
+            ('audit_log', 'audit_insert')
+        ) AS policies(table_name, policy_name)
+    LOOP
         EXECUTE format(
-            'DROP POLICY IF EXISTS biztrack_demo_anon_all ON public.%I',
-            tbl
-        );
-
-        EXECUTE format(
-            'CREATE POLICY biztrack_demo_anon_all
-             ON public.%I
-             FOR ALL TO anon
-             USING (true)
-             WITH CHECK (true)',
-            tbl
+            'DROP POLICY IF EXISTS %I ON public.%I',
+            policy_row.policy_name,
+            policy_row.table_name
         );
     END LOOP;
 END $$;
 
-GRANT USAGE ON SCHEMA public TO anon;
+CREATE POLICY business_member_read
+    ON public.businesses FOR SELECT TO authenticated
+    USING (public.is_business_member(id));
+CREATE POLICY business_settings_update
+    ON public.businesses FOR UPDATE TO authenticated
+    USING (public.has_business_permission(id, 'manage_settings'))
+    WITH CHECK (public.has_business_permission(id, 'manage_settings'));
 
+CREATE POLICY member_read
+    ON public.business_members FOR SELECT TO authenticated
+    USING (
+        user_id = (SELECT auth.uid())
+        OR public.has_business_permission(business_id, 'manage_members')
+    );
+
+CREATE POLICY profile_read
+    ON public.user_profiles FOR SELECT TO authenticated
+    USING (id = (SELECT auth.uid()));
+CREATE POLICY profile_update
+    ON public.user_profiles FOR UPDATE TO authenticated
+    USING (id = (SELECT auth.uid()))
+    WITH CHECK (id = (SELECT auth.uid()));
+
+CREATE POLICY invitation_read
+    ON public.business_invitations FOR SELECT TO authenticated
+    USING (
+        public.has_business_permission(business_id, 'manage_members')
+        OR LOWER(invited_email) = LOWER(COALESCE(auth.jwt() ->> 'email', ''))
+    );
+
+CREATE POLICY invitation_insert
+    ON public.business_invitations FOR INSERT TO authenticated
+    WITH CHECK (
+        public.has_business_permission(business_id, 'manage_members')
+        AND invited_by = (SELECT auth.uid())
+    );
+
+CREATE POLICY invitation_update
+    ON public.business_invitations FOR UPDATE TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_members'))
+    WITH CHECK (public.has_business_permission(business_id, 'manage_members'));
+
+CREATE POLICY party_read
+    ON public.parties FOR SELECT TO authenticated
+    USING (public.has_business_permission(business_id, 'view_finances'));
+CREATE POLICY party_insert
+    ON public.parties FOR INSERT TO authenticated
+    WITH CHECK (public.has_business_permission(business_id, 'manage_finances'));
+CREATE POLICY party_update
+    ON public.parties FOR UPDATE TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_finances'))
+    WITH CHECK (public.has_business_permission(business_id, 'manage_finances'));
+CREATE POLICY party_delete
+    ON public.parties FOR DELETE TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_finances'));
+
+CREATE POLICY product_read
+    ON public.products FOR SELECT TO authenticated
+    USING (public.has_business_permission(business_id, 'view_products'));
+CREATE POLICY product_insert
+    ON public.products FOR INSERT TO authenticated
+    WITH CHECK (public.has_business_permission(business_id, 'manage_inventory'));
+CREATE POLICY product_update
+    ON public.products FOR UPDATE TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_inventory'))
+    WITH CHECK (public.has_business_permission(business_id, 'manage_inventory'));
+CREATE POLICY product_delete
+    ON public.products FOR DELETE TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_inventory'));
+
+CREATE POLICY transaction_read
+    ON public.transactions FOR SELECT TO authenticated
+    USING (public.has_business_permission(business_id, 'view_finances'));
+CREATE POLICY transaction_insert
+    ON public.transactions FOR INSERT TO authenticated
+    WITH CHECK (public.has_business_permission(business_id, 'manage_finances'));
+CREATE POLICY transaction_update
+    ON public.transactions FOR UPDATE TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_finances'))
+    WITH CHECK (public.has_business_permission(business_id, 'manage_finances'));
+CREATE POLICY transaction_delete
+    ON public.transactions FOR DELETE TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_finances'));
+
+CREATE POLICY supplier_order_read
+    ON public.supplier_orders FOR SELECT TO authenticated
+    USING (public.has_business_permission(business_id, 'view_finances'));
+CREATE POLICY supplier_order_insert
+    ON public.supplier_orders FOR INSERT TO authenticated
+    WITH CHECK (public.has_business_permission(business_id, 'manage_finances'));
+CREATE POLICY supplier_order_update
+    ON public.supplier_orders FOR UPDATE TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_finances'))
+    WITH CHECK (public.has_business_permission(business_id, 'manage_finances'));
+CREATE POLICY supplier_order_delete
+    ON public.supplier_orders FOR DELETE TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_finances'));
+
+CREATE POLICY supplier_order_payment_read
+    ON public.supplier_order_payments FOR SELECT TO authenticated
+    USING (public.has_business_permission(business_id, 'view_finances'));
+CREATE POLICY supplier_order_payment_insert
+    ON public.supplier_order_payments FOR INSERT TO authenticated
+    WITH CHECK (public.has_business_permission(business_id, 'manage_finances'));
+CREATE POLICY supplier_order_payment_update
+    ON public.supplier_order_payments FOR UPDATE TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_finances'))
+    WITH CHECK (public.has_business_permission(business_id, 'manage_finances'));
+CREATE POLICY supplier_order_payment_delete
+    ON public.supplier_order_payments FOR DELETE TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_finances'));
+
+CREATE POLICY stock_movement_read
+    ON public.stock_movements FOR SELECT TO authenticated
+    USING (public.has_business_permission(business_id, 'manage_inventory'));
+CREATE POLICY stock_movement_insert
+    ON public.stock_movements FOR INSERT TO authenticated
+    WITH CHECK (public.has_business_permission(business_id, 'manage_inventory'));
+
+CREATE POLICY audit_read
+    ON public.audit_log FOR SELECT TO authenticated
+    USING (
+        public.has_business_permission(business_id, 'view_finances')
+        OR public.has_business_permission(business_id, 'manage_settings')
+    );
+CREATE POLICY audit_insert
+    ON public.audit_log FOR INSERT TO authenticated
+    WITH CHECK (
+        actor_id = (SELECT auth.uid())::text
+        AND (
+            public.has_business_permission(business_id, 'manage_finances')
+            OR public.has_business_permission(business_id, 'manage_inventory')
+        )
+    );
+
+GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE
 ON public.businesses,
    public.business_members,
+   public.user_profiles,
+   public.business_invitations,
    public.parties,
    public.products,
    public.transactions,
@@ -366,7 +908,37 @@ ON public.businesses,
    public.supplier_order_payments,
    public.stock_movements,
    public.audit_log
-TO anon;
+TO authenticated;
+
+REVOKE ALL ON public.businesses,
+   public.business_members,
+   public.user_profiles,
+   public.business_invitations,
+   public.parties,
+   public.products,
+   public.transactions,
+   public.supplier_orders,
+   public.supplier_order_payments,
+   public.stock_movements,
+   public.audit_log
+FROM anon;
+
+REVOKE ALL ON FUNCTION public.is_business_member(uuid) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.has_business_permission(uuid, text) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.create_business_with_owner(
+    uuid, text, text, text, text, text, text, text
+) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.accept_business_invitation(text) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.get_business_invitation(text) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.create_user_profile() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.set_authenticated_audit_actor() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.is_business_member(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.has_business_permission(uuid, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_business_with_owner(
+    uuid, text, text, text, text, text, text, text
+) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.accept_business_invitation(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_business_invitation(text) TO authenticated;
 
 -- Atomically records an inventory movement, updates current stock, and audits it.
 CREATE OR REPLACE FUNCTION public.record_stock_movement(
@@ -391,6 +963,11 @@ DECLARE
     v_new_stock numeric(12,2);
     v_reason text;
 BEGIN
+        IF NOT public.has_business_permission(p_business_id, 'manage_inventory') THEN
+            RAISE EXCEPTION 'You are not allowed to manage inventory in this business.'
+                USING ERRCODE = '42501';
+        END IF;
+
     IF p_type NOT IN ('purchase', 'sale', 'damaged', 'lost', 'adjustment') THEN
         RAISE EXCEPTION 'Invalid stock movement type.';
     END IF;
@@ -523,6 +1100,12 @@ DECLARE
     v_payment_id uuid;
     v_reason text;
 BEGIN
+    IF NOT public.has_business_permission(p_business_id, 'manage_finances')
+       OR NOT public.has_business_permission(p_business_id, 'manage_inventory') THEN
+        RAISE EXCEPTION 'You are not allowed to record this restock.'
+            USING ERRCODE = '42501';
+    END IF;
+
     IF p_quantity IS NULL OR p_quantity <= 0 OR p_quantity > 9999999999.99
        OR p_quantity <> ROUND(p_quantity, 2) THEN
         RAISE EXCEPTION 'Quantity must be positive with at most 2 decimal places.';
@@ -694,6 +1277,12 @@ DECLARE
     v_transaction_id uuid;
     v_type text;
 BEGIN
+    IF NOT public.has_business_permission(p_business_id, 'manage_finances')
+       OR NOT public.has_business_permission(p_business_id, 'manage_inventory') THEN
+        RAISE EXCEPTION 'You are not allowed to record this sale.'
+            USING ERRCODE = '42501';
+    END IF;
+
     IF p_quantity IS NULL OR p_quantity <= 0 OR p_quantity > 9999999999.99
        OR p_quantity <> ROUND(p_quantity, 2) THEN
         RAISE EXCEPTION 'Quantity must be positive with at most 2 decimal places.';
@@ -836,6 +1425,11 @@ DECLARE
     v_transaction_id uuid;
     v_payment_id uuid;
 BEGIN
+    IF NOT public.has_business_permission(p_business_id, 'manage_finances') THEN
+        RAISE EXCEPTION 'You are not allowed to create supplier orders.'
+            USING ERRCODE = '42501';
+    END IF;
+
     IF p_items IS NULL OR NULLIF(BTRIM(p_items), '') IS NULL THEN
         RAISE EXCEPTION 'Choose a product for this order.';
     END IF;
@@ -983,6 +1577,12 @@ DECLARE
     v_new_stock numeric;
     v_unit_cost numeric;
 BEGIN
+    IF NOT public.has_business_permission(p_business_id, 'manage_finances')
+       OR NOT public.has_business_permission(p_business_id, 'manage_inventory') THEN
+        RAISE EXCEPTION 'You are not allowed to receive supplier orders.'
+            USING ERRCODE = '42501';
+    END IF;
+
     IF p_target_status IS NULL OR p_target_status NOT IN ('ordered', 'received') THEN
         RAISE EXCEPTION 'Orders can only be moved between Ordered and Received.';
     END IF;
@@ -1228,6 +1828,11 @@ DECLARE
     v_payment_id uuid;
     v_allocations jsonb := '[]'::jsonb;
 BEGIN
+    IF NOT public.has_business_permission(p_business_id, 'manage_finances') THEN
+        RAISE EXCEPTION 'You are not allowed to record supplier payments.'
+            USING ERRCODE = '42501';
+    END IF;
+
     IF p_amount IS NULL OR p_amount <= 0
        OR p_amount > 9999999999.99
        OR p_amount <> ROUND(p_amount, 2) THEN
@@ -1456,3 +2061,66 @@ $$;
 GRANT EXECUTE ON FUNCTION public.record_supplier_order_payment(
     uuid, uuid, numeric, text, date, uuid, text, text
 ) TO anon;
+
+REVOKE ALL ON FUNCTION public.prevent_party_delete_with_open_credit() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.record_stock_movement(
+    uuid, uuid, text, numeric, numeric, text, uuid, text, text, text
+) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.record_product_restock(
+    uuid, uuid, uuid, numeric, numeric, numeric, text, date, date, text, text, text
+) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.record_product_sale(
+    uuid, uuid, numeric, uuid, text, date, date, text, text, text
+) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.create_supplier_order(
+    uuid, uuid, uuid, numeric, text, text, numeric, date, date, text, text,
+    text, text, text
+) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.set_supplier_order_status(
+    uuid, uuid, text, text, text
+) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.record_supplier_order_payment(
+    uuid, uuid, numeric, text, date, uuid, text, text
+) FROM PUBLIC, anon;
+
+GRANT EXECUTE ON FUNCTION public.record_stock_movement(
+    uuid, uuid, text, numeric, numeric, text, uuid, text, text, text
+) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.record_product_restock(
+    uuid, uuid, uuid, numeric, numeric, numeric, text, date, date, text, text, text
+) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.record_product_sale(
+    uuid, uuid, numeric, uuid, text, date, date, text, text, text
+) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_supplier_order(
+    uuid, uuid, uuid, numeric, text, text, numeric, date, date, text, text,
+    text, text, text
+) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.set_supplier_order_status(
+    uuid, uuid, text, text, text
+) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.record_supplier_order_payment(
+    uuid, uuid, numeric, text, date, uuid, text, text
+) TO authenticated;
+
+ALTER FUNCTION public.prevent_party_delete_with_open_credit()
+    SET search_path = public, pg_temp;
+ALTER FUNCTION public.record_stock_movement(
+    uuid, uuid, text, numeric, numeric, text, uuid, text, text, text
+) SET search_path = public, pg_temp;
+ALTER FUNCTION public.record_product_restock(
+    uuid, uuid, uuid, numeric, numeric, numeric, text, date, date, text, text, text
+) SET search_path = public, pg_temp;
+ALTER FUNCTION public.record_product_sale(
+    uuid, uuid, numeric, uuid, text, date, date, text, text, text
+) SET search_path = public, pg_temp;
+ALTER FUNCTION public.create_supplier_order(
+    uuid, uuid, uuid, numeric, text, text, numeric, date, date, text, text,
+    text, text, text
+) SET search_path = public, pg_temp;
+ALTER FUNCTION public.set_supplier_order_status(
+    uuid, uuid, text, text, text
+) SET search_path = public, pg_temp;
+ALTER FUNCTION public.record_supplier_order_payment(
+    uuid, uuid, numeric, text, date, uuid, text, text
+) SET search_path = public, pg_temp;

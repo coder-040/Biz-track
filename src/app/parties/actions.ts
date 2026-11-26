@@ -26,6 +26,7 @@ import type {
   PaymentMethod,
 } from "@/lib/credit/types";
 import { formatCurrency } from "@/lib/format";
+import { requireBusinessPermission } from "@/lib/auth/server";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -59,6 +60,7 @@ export async function createCustomerAction(
   _previousState: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  await requireBusinessPermission("manage_finances");
   const name = text(formData, "name");
   const phone = optionalText(formData, "phone");
   const address = optionalText(formData, "address");
@@ -100,6 +102,7 @@ export async function recordCreditSaleAction(
   _previousState: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  await requireBusinessPermission("manage_finances");
   const today = todayISO();
   const partyId = text(formData, "party_id");
   const amount = parseAmountInput(text(formData, "amount"));
@@ -161,6 +164,7 @@ export async function recordPaymentAction(
   _previousState: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  await requireBusinessPermission("manage_finances");
   const today = todayISO();
   const partyId = text(formData, "party_id");
   const amount = parseAmountInput(text(formData, "amount"));

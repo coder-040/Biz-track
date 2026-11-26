@@ -1,5 +1,4 @@
-import { BUSINESS_ID } from "@/lib/config";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { requireBusinessPermissions } from "@/lib/auth/server";
 
 export interface ProductSaleProduct {
   id: string;
@@ -19,18 +18,21 @@ export async function getProductSaleOptions(): Promise<{
   products: ProductSaleProduct[];
   customers: SaleCustomer[];
 }> {
-  const supabase = createServerSupabaseClient();
+  const { supabase, business } = await requireBusinessPermissions(
+    "manage_finances",
+    "manage_inventory",
+  );
   const [productsResult, customersResult] = await Promise.all([
     supabase
       .from("products")
       .select("id, name, sku, current_stock, purchase_price, selling_price")
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", business.id)
       .eq("is_active", true)
       .order("name", { ascending: true }),
     supabase
       .from("parties")
       .select("id, name")
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", business.id)
       .in("type", ["customer", "both"])
       .order("name", { ascending: true }),
   ]);

@@ -10,7 +10,7 @@ export type SupplierPaymentMethod = (typeof SUPPLIER_PAYMENT_METHODS)[number];
 export const CREDIT_PAYMENT_METHOD = "credit" as const;
 
 export type SupplierTransactionType = "supplier_purchase" | "supplier_payment";
-export type Role = "owner" | "staff";
+export type Role = "owner" | "admin" | "staff";
 
 export interface PartyRow {
   id: string;

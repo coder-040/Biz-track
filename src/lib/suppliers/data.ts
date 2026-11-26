@@ -1,5 +1,4 @@
-import { ACTOR_ID, BUSINESS_ID } from "@/lib/config";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { requireBusinessPermission } from "@/lib/auth/server";
 import type {
   PartyRow,
   Role,
@@ -29,11 +28,11 @@ function logQueryError(label: string, error: { message?: string }): void {
 }
 
 export async function getSupplierParties(): Promise<PartyRow[]> {
-  const supabase = createServerSupabaseClient();
+  const { supabase, business } = await requireBusinessPermission("view_finances");
   const { data, error } = await supabase
     .from("parties")
     .select(PARTY_COLUMNS)
-    .eq("business_id", BUSINESS_ID)
+    .eq("business_id", business.id)
     .in("type", ["supplier", "both"])
     .order("name", { ascending: true });
 
@@ -46,11 +45,11 @@ export async function getSupplierParties(): Promise<PartyRow[]> {
 }
 
 export async function getSupplierTransactions(): Promise<SupplierTransactionRow[]> {
-  const supabase = createServerSupabaseClient();
+  const { supabase, business } = await requireBusinessPermission("view_finances");
   const { data, error } = await supabase
     .from("transactions")
     .select(TRANSACTION_COLUMNS)
-    .eq("business_id", BUSINESS_ID)
+    .eq("business_id", business.id)
     .in("type", ["supplier_purchase", "supplier_payment"])
     .order("transaction_date", { ascending: false })
     .order("created_at", { ascending: false });
@@ -67,18 +66,18 @@ export async function getSupplierOrderData(): Promise<{
   orders: SupplierOrderRecord[];
   payments: SupplierOrderPaymentRecord[];
 }> {
-  const supabase = createServerSupabaseClient();
+  const { supabase, business } = await requireBusinessPermission("view_finances");
   const [ordersResult, paymentsResult] = await Promise.all([
     supabase
       .from("supplier_orders")
       .select(SUPPLIER_ORDER_COLUMNS)
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", business.id)
       .order("order_date", { ascending: true })
       .order("created_at", { ascending: true }),
     supabase
       .from("supplier_order_payments")
       .select(SUPPLIER_ORDER_PAYMENT_COLUMNS)
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", business.id)
       .order("payment_date", { ascending: true })
       .order("created_at", { ascending: true }),
   ]);
@@ -96,18 +95,6 @@ export async function getSupplierOrderData(): Promise<{
 }
 
 export async function getRole(): Promise<Role> {
-  const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase
-    .from("business_members")
-    .select("role")
-    .eq("business_id", BUSINESS_ID)
-    .eq("actor_id", ACTOR_ID)
-    .maybeSingle();
-
-  if (error) {
-    logQueryError("getRole", error);
-    throw new Error("Failed to load role");
-  }
-
-  return data?.role === "owner" ? "owner" : "staff";
+  const { role } = await requireBusinessPermission("view_finances");
+  return role;
 }

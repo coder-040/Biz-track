@@ -1,6 +1,5 @@
 import { buildCustomerAccount } from "@/lib/credit/calculations";
 import type { CreditTransaction, Party } from "@/lib/credit/types";
-import { BUSINESS_ID } from "@/lib/config";
 import { movementDelta } from "@/lib/inventory";
 import { cashFlowType } from "@/lib/transactions/accounting";
 import type {
@@ -82,11 +81,11 @@ function nextDate(value: string): string {
   return date.toISOString().slice(0, 10);
 }
 
-function customerParty(row: ReportParty): Party | null {
+function customerParty(row: ReportParty, businessId: string): Party | null {
   if (row.type !== "customer" && row.type !== "both") return null;
   return {
     id: row.id,
-    business_id: BUSINESS_ID,
+    business_id: businessId,
     name: row.name,
     phone: null,
     type: row.type,
@@ -95,10 +94,13 @@ function customerParty(row: ReportParty): Party | null {
   };
 }
 
-function creditTransaction(row: ReportTransaction): CreditTransaction {
+function creditTransaction(
+  row: ReportTransaction,
+  businessId: string,
+): CreditTransaction {
   return {
     ...row,
-    business_id: BUSINESS_ID,
+    business_id: businessId,
     amount: amount(row.amount),
     created_at: row.created_at ?? null,
   };
@@ -214,9 +216,9 @@ export function buildReport(
   if (type === "customer-outstanding") {
     const eligibleTransactions = sources.transactions
       .filter((tx) => dateOnly(tx.transaction_date) <= asOfDate)
-      .map(creditTransaction);
+      .map((transaction) => creditTransaction(transaction, sources.businessId));
     const rows = sources.parties
-      .map(customerParty)
+      .map((party) => customerParty(party, sources.businessId))
       .filter((party): party is Party => party !== null)
       .map((party) => buildCustomerAccount(party, eligibleTransactions, cutoffExclusive).summary)
       .filter((summary) => summary.balance > 0)

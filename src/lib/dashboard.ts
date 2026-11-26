@@ -1,9 +1,8 @@
 import { connection } from "next/server";
-import { BUSINESS_ID } from "@/lib/config";
+import { requireBusinessPermission } from "@/lib/auth/server";
 import { addDaysISO, todayISOInTimeZone } from "@/lib/date";
 import type { SupplierOption } from "@/lib/inventory";
 import type { ProductSaleProduct, SaleCustomer } from "@/lib/sales/data";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { cashFlowType } from "@/lib/transactions/accounting";
 
 
@@ -89,7 +88,8 @@ export type DashboardData = {
 
 export async function getDashboardData(): Promise<DashboardData> {
   await connection();
-  const db = createServerSupabaseClient();
+  const { supabase: db, business } = await requireBusinessPermission("view_dashboard");
+  const businessId = business.id;
   const today = todayISOInTimeZone("Asia/Kathmandu");
 
   // Run all independent queries in parallel
@@ -107,14 +107,14 @@ export async function getDashboardData(): Promise<DashboardData> {
     db
       .from("transactions")
       .select("type, amount, payment_method")
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", businessId)
       .eq("transaction_date", today),
 
     // All income/expense transactions for cash & bank/online balance
     db
       .from("transactions")
       .select("type, amount, payment_method")
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", businessId)
       .in("type", [
         "income",
         "expense",
@@ -129,7 +129,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       .select(
         "id, type, party_id, amount, due_date, payment_method, transaction_date, created_at"
       )
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", businessId)
       .in("type", [
         "customer_credit_sale",
         "customer_payment",
@@ -143,7 +143,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       .select(
         "id, name, sku, current_stock, min_stock, purchase_price, selling_price, supplier_id",
       )
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", businessId)
       .eq("is_active", true),
 
     // 5 recent transactions
@@ -152,7 +152,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       .select(
         "id, type, party_id, amount, category, payment_method, description, due_date, transaction_date, created_at, parties(name)"
       )
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", businessId)
       .order("transaction_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(5),
@@ -163,20 +163,20 @@ export async function getDashboardData(): Promise<DashboardData> {
       .select(
         "id, type, party_id, amount, category, payment_method, description, due_date, transaction_date, created_at, parties(name)"
       )
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", businessId)
       .gte("due_date", today)
       .gt("amount", 0)
       .order("due_date", { ascending: true })
       .limit(5),
 
     // All parties (for name lookup)
-    db.from("parties").select("id, name, type").eq("business_id", BUSINESS_ID),
+    db.from("parties").select("id, name, type").eq("business_id", businessId),
 
     // Weekly income/expense (past 7 days)
     db
       .from("transactions")
       .select("type, amount, payment_method, transaction_date")
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", businessId)
       .gte("transaction_date", addDaysISO(today, -6))
       .in("type", [
         "income",

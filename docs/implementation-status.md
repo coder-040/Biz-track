@@ -6,9 +6,9 @@
 
 ## Executive summary
 
-The six task areas have working application code for their core workflows. Several of the user-assigned extensions are also implemented, including supplier orders, product sales, order-linked stock receiving, identity duplicate guards, branding, and toast feedback.
+The six task areas have working application code for their core workflows. Several of the user-assigned extensions are also implemented, including supplier orders, product sales, order-linked stock receiving, identity duplicate guards, branding, and toast feedback. The approved authentication and business-account feature is now in progress: SSR session handling, auth routes/actions, business setup/context, permission checks, and restrictive RLS changes are in the codebase, but invitations, member management, profile editing, and live database verification remain.
 
-This is **not yet a fully verified MVP deployment**. The latest `supabase/schema.sql` changes have not been applied to the configured Supabase database. The last known browser verification found the live database missing `supplier_orders.product_id`, so supplier-order workflows can fail until the schema is applied. Authentication and business provisioning are also intentionally absent; the current demo's permissive Supabase policies and application-level business scoping are not suitable as production security controls.
+This is **not yet a fully verified MVP deployment**. The latest `supabase/schema.sql` changes have not been applied to the configured Supabase database. The last known browser verification found the live database missing `supplier_orders.product_id`, so supplier-order workflows can fail until the schema is applied. The new RLS policies and authenticated flows have not been validated against a live Supabase project; existing demo data is still intentionally unclaimed and must not be exposed until its owner is mapped.
 
 ## Status key
 
@@ -32,8 +32,8 @@ This is **not yet a fully verified MVP deployment**. The latest `supabase/schema
 
 | PRD story / area | Status | Assessment |
 | --- | --- | --- |
-| US-1 — Registration, login, business setup | **Not implemented** | Authentication and registration were explicitly excluded by the current project guardrails. |
-| US-2 — Staff accounts and permissions | **Partial** | Owner/staff role checks exist in application flows, but there is no authenticated staff-management flow. Demo actor identity is configuration-based. |
+| US-1 — Registration, login, business setup | **Partial; in progress** | Supabase Auth SSR sessions, login, registration, recovery, callback, and atomic business/Owner setup are implemented in code. Live email delivery, SQL deployment, and end-to-end flows are not verified. |
+| US-2 — Staff accounts and permissions | **Partial; in progress** | Owner/Admin/Staff permission defaults and route/data-layer guards are present. Invitation and member lifecycle workflows remain unimplemented. |
 | US-3 — Dashboard | **Partial** | Core daily financial, balance, inventory, recent-transaction, and weekly-flow views exist. Monthly overview and fully accurate future-due reminders remain incomplete. |
 | US-4 — Record income and expenses | **Implemented** | Positive amount, date, category, payment method, optional description/attachment, and dashboard/report accounting are present. |
 | US-5 — Edit/delete with audit history | **Implemented in code** | Transaction changes are audited; audit persistence must be verified against the current Supabase schema. |
@@ -46,7 +46,7 @@ This is **not yet a fully verified MVP deployment**. The latest `supabase/schema
 | US-12 — Reports and exports | **Implemented** | The requested report families, date ranges, totals, CSV, and Excel-compatible export are present. |
 | US-13 — In-app alerts | **Partial** | Low-stock and overdue alerts are present, including the settled-supplier stale-alert regression fix. Future reminders are not yet a complete outstanding-by-due-date view. |
 | Responsive UI | **Implemented in code** | Responsive layouts and mobile interactions are used across the new flows; this review did not repeat a full device-by-device manual test. |
-| Strict tenant isolation / secure access | **Partial; not production-ready** | Queries are scoped by configured business ID, but the schema's demo `anon` policies are permissive. No authentication exists to establish a secure user/business boundary. |
+| Strict tenant isolation / secure access | **Partial; not production-ready** | Server loaders use the authenticated active-business membership, browser operations use that verified context, and the schema now defines authenticated permission-based RLS. These changes are not applied or live-tested; the configured database may still have the older demo policies. |
 | Audit history | **Implemented in code; DB verification pending** | Financial and inventory operations write audit records in the implemented flows. Confirm the latest database schema/functions are deployed. |
 | Backups | **Not verified / not implemented here** | No backup or restore workflow was found in the reviewed implementation. |
 
@@ -73,11 +73,33 @@ This is **not yet a fully verified MVP deployment**. The latest `supabase/schema
 - Money Flow filters now update the list in the client and synchronize the URL with the native History API, avoiding a server-component refresh for filter changes.
 - Transfer/Reconcile and Passbook routes were removed at the user's request; their dashboard buttons had already been removed.
 
+## Authentication and business-account feature status
+
+**Status: In progress; not deployment-ready.** The attached specification has been adapted to this repository's Next.js App Router and Supabase architecture. A separate, more detailed progress record is maintained in [`authentication-implementation-status.md`](./authentication-implementation-status.md).
+
+### Confirmed decisions
+
+- Use Supabase Auth and its configured email delivery for authentication, recovery, and invitations.
+- Leave the existing BizTrack Demo business and its records unclaimed; the user will map an owner manually using SQL.
+- New Staff memberships default to inventory operations only, with no financial dashboard or report access.
+
+### Implementation checklist
+
+| Area | Status | Current finding / required outcome |
+| --- | --- | --- |
+| Cookie-backed auth and protected routes | Implemented in code; needs live verification | SSR cookie clients, Next.js proxy session refresh, protected routes, login/logout, registration, callback, and password reset/update are present. |
+| Profile and business onboarding | Partial | Auth metadata/profile creation, business setup validation, idempotent business/Owner RPC, and selection are present. Profile editing and account/email management are not. |
+| Business context and switching | Partial | Active business selection uses a verified membership and HttpOnly cookie. Server loaders and audited browser flows no longer use configured demo business/actor IDs. |
+| Roles and permissions | Partial | Owner/Admin/Staff defaults, sidebar filtering, server data guards, Server Action checks, and matching SQL permission helpers are present. Staff defaults to inventory only. |
+| Team invitations and member lifecycle | Not implemented | The invitation table exists, but invite creation, acceptance, revocation, member removal, and invitation email delivery are not implemented. |
+| PostgreSQL isolation and audit identity | Implemented in schema; unverified | Authenticated permission-based RLS, identity-derived audit actor, and function permissions are in `supabase/schema.sql`. The SQL has not been applied or tested against a database; the existing demo business remains unclaimed. |
+| Verification and setup documentation | Partial | Focused permission/validation tests and a separate status file exist. Supabase Auth/email settings, redirect allow-list, schema deployment, manual legacy-owner mapping, and live flow verification remain operational steps. |
+
 ## Operational and product gaps to resolve
 
 1. **Apply the latest [`supabase/schema.sql`](../supabase/schema.sql) in Supabase.** The current repository includes new supplier-order columns, indexes, policies, triggers, and RPC functions. The last known live error was that `supplier_orders.product_id` did not exist.
 2. Before applying uniqueness indexes, check existing product names and party name/phone pairs for duplicates; resolve conflicts without discarding referenced transaction or stock history.
-3. Keep authentication, registration, and production authorization as an explicit future decision. Until then, the current demo policies and environment-configured actor are not production security.
+3. Finish the approved authentication feature: implement team invitations/member lifecycle and profile management, then verify every flow against Supabase. Until the schema is deployed and tested, the current database policies cannot be assumed restrictive.
 4. Complete accurate future-due reminders/monthly dashboard overview and decide whether concurrent customer payments need atomic database enforcement.
 5. Decide whether to add barcode support and a modern `.xlsx` export if those exact formats are required.
 

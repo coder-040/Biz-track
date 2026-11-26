@@ -1,5 +1,4 @@
-import { BUSINESS_ID } from "@/lib/config"
-import { createServerSupabaseClient } from "@/lib/supabase/server"
+import { requireBusinessPermission } from "@/lib/auth/server";
 import {
   calculateInventoryValue,
   type Product,
@@ -17,18 +16,18 @@ export interface InventoryOverview {
 }
 
 export async function getInventoryOverview(): Promise<InventoryOverview> {
-  const supabase = createServerSupabaseClient()
+  const { supabase, business } = await requireBusinessPermission("view_products");
 
   const [productsResult, suppliersResult] = await Promise.all([
     supabase
       .from("products")
       .select("*")
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", business.id)
       .order("created_at", { ascending: false }),
     supabase
       .from("parties")
       .select("id, name")
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", business.id)
       .in("type", ["supplier", "both"])
       .order("name", { ascending: true }),
   ])
@@ -63,11 +62,11 @@ export async function getInventoryOverview(): Promise<InventoryOverview> {
 }
 
 export async function getActiveProducts(): Promise<ProductOption[]> {
-  const supabase = createServerSupabaseClient()
+  const { supabase, business } = await requireBusinessPermission("view_products");
   const { data, error } = await supabase
     .from("products")
     .select("id, name, sku")
-    .eq("business_id", BUSINESS_ID)
+    .eq("business_id", business.id)
     .eq("is_active", true)
     .order("name", { ascending: true })
 
@@ -79,11 +78,11 @@ export async function getActiveProducts(): Promise<ProductOption[]> {
 }
 
 export async function getProduct(productId: string): Promise<Product | null> {
-  const supabase = createServerSupabaseClient()
+  const { supabase, business } = await requireBusinessPermission("view_products");
   const { data, error } = await supabase
     .from("products")
     .select("*")
-    .eq("business_id", BUSINESS_ID)
+    .eq("business_id", business.id)
     .eq("id", productId)
     .maybeSingle()
 
@@ -97,11 +96,11 @@ export async function getProduct(productId: string): Promise<Product | null> {
 export async function getStockMovements(
   productId: string
 ): Promise<StockMovement[]> {
-  const supabase = createServerSupabaseClient()
+  const { supabase, business } = await requireBusinessPermission("view_products");
   const { data, error } = await supabase
     .from("stock_movements")
     .select("*")
-    .eq("business_id", BUSINESS_ID)
+    .eq("business_id", business.id)
     .eq("product_id", productId)
     .order("created_at", { ascending: false })
 

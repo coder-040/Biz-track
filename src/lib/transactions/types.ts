@@ -4,7 +4,7 @@ export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 export const PAYMENT_METHODS = ["cash", "bank", "qr", "online"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-export type Role = "owner" | "staff";
+export type Role = "owner" | "admin" | "staff";
 export type AuditAction = "insert" | "update" | "delete";
 
 export interface TransactionRow {

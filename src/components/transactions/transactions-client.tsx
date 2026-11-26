@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { RequiredMark } from "@/components/ui/required-mark";
-import { ACTOR_ID, ACTOR_NAME, BUSINESS_ID } from "@/lib/config";
+import { useBusinessContext } from "@/components/auth/business-context";
+import { can } from "@/lib/auth/permissions";
 import { supabase } from "@/lib/supabase/client";
 import { writeAudit } from "@/lib/transactions/audit";
 import {
@@ -141,7 +142,6 @@ function validateForm(form: FormState): string | null {
 
 function buildPayload(form: FormState) {
   return {
-    business_id: BUSINESS_ID,
     type: form.type,
     amount: Number(form.amount),
     transaction_date: form.transaction_date,
@@ -159,6 +159,10 @@ export function TransactionsClient({
   initialFilters,
 }: TransactionsClientProps) {
   const router = useRouter();
+  const { context } = useBusinessContext();
+  const businessId = context?.activeBusinessId;
+  const actorId = context?.user.id;
+  const actorName = context?.user.fullName || context?.user.email || null;
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [rows, setRows] = useState(initialRows);
@@ -188,7 +192,11 @@ export function TransactionsClient({
     setFilterError(null);
   }
 
-  const canManage = role === "owner";
+  const canManage = Boolean(
+    context?.activeRole &&
+      context.activeRole === role &&
+      can(context.activeRole, "manage_finances", context.activePermissions),
+  );
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const currentPage = Math.min(filters.page, totalPages);
   const visibleRows = rows.slice(
@@ -206,11 +214,14 @@ export function TransactionsClient({
   async function recordAudit(
     entry: Omit<AuditEntry, "businessId" | "actorId" | "actorName">,
   ) {
+    if (!businessId || !actorId) {
+      throw new Error("Business account context is not ready.");
+    }
     const fullEntry: AuditEntry = {
       ...entry,
-      businessId: BUSINESS_ID,
-      actorId: ACTOR_ID,
-      actorName: ACTOR_NAME,
+      businessId,
+      actorId,
+      actorName,
     };
 
     try {
@@ -238,10 +249,14 @@ export function TransactionsClient({
       toast.error(validationError);
       return;
     }
+    if (!canManage || !businessId) {
+      toast.error("You do not have permission to manage financial records.");
+      return;
+    }
 
     setBusy(true);
     try {
-      const payload = buildPayload(form);
+      const payload = { ...buildPayload(form), business_id: businessId };
 
       if (editingId) {
         const before = initialRows.find((row) => row.id === editingId) ?? null;
@@ -249,7 +264,7 @@ export function TransactionsClient({
           .from("transactions")
           .update(payload)
           .eq("id", editingId)
-          .eq("business_id", BUSINESS_ID)
+          .eq("business_id", businessId)
           .select(TRANSACTION_COLUMNS)
           .single();
 
@@ -303,7 +318,7 @@ export function TransactionsClient({
         .from("transactions")
         .delete()
         .eq("id", row.id)
-        .eq("business_id", BUSINESS_ID);
+        .eq("business_id", businessId);
 
       if (dbError) throw dbError;
 
@@ -362,6 +377,11 @@ export function TransactionsClient({
   }
 
   async function loadFilteredRows(next: TransactionFilters) {
+    if (!businessId) {
+      setFilterError("Business account context is not ready.");
+      setFiltering(false);
+      return;
+    }
     const requestId = ++filterRequest.current;
     setFiltering(true);
     setFilterError(null);
@@ -370,7 +390,7 @@ export function TransactionsClient({
       let query = supabase
         .from("transactions")
         .select(TRANSACTION_COLUMNS)
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", businessId)
         .in("type", ["income", "expense"]);
 
       if (next.from) query = query.gte("transaction_date", next.from);
@@ -607,7 +627,7 @@ export function TransactionsClient({
             </div>
 
             <div className="flex flex-wrap gap-2 sm:col-span-2">
-              <Button type="submit" disabled={busy}>
+              <Button type="submit" disabled={busy || !canManage}>
                 {busy
                   ? "Saving..."
                   : editingId

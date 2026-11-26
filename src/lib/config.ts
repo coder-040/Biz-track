@@ -1,6 +1,3 @@
-export const DEMO_BUSINESS_ID = "11111111-1111-4111-8111-111111111111";
-export const DEMO_ACTOR_ID = "demo-owner";
-
 function supabaseOrigin(raw: string | undefined): string {
   if (!raw) return "";
   try {
@@ -16,15 +13,6 @@ export const SUPABASE_URL = supabaseOrigin(
 
 export const SUPABASE_ANON_KEY =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || "";
-
-export const BUSINESS_ID =
-  process.env.NEXT_PUBLIC_BIZTRACK_BUSINESS_ID?.trim() || DEMO_BUSINESS_ID;
-
-export const ACTOR_ID =
-  process.env.NEXT_PUBLIC_BIZTRACK_ACTOR_ID?.trim() || DEMO_ACTOR_ID;
-
-export const ACTOR_NAME =
-  process.env.NEXT_PUBLIC_BIZTRACK_ACTOR_NAME?.trim() || null;
 
 export interface SupabaseConfig {
   url: string;
@@ -42,10 +30,4 @@ export function getSupabaseConfig(): SupabaseConfig | null {
 
 export function isSupabaseConfigured(): boolean {
   return getSupabaseConfig() !== null;
-}
-
-export type DataSource = "supabase" | "demo";
-
-export function getDataSource(): DataSource {
-  return isSupabaseConfigured() ? "supabase" : "demo";
 }

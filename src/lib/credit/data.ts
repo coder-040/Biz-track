@@ -1,4 +1,4 @@
-import { BUSINESS_ID, isSupabaseConfigured } from "@/lib/config";
+import { requireBusinessPermission } from "@/lib/auth/server";
 import {
   buildCustomerAccount,
   isCustomerParty,
@@ -6,15 +6,6 @@ import {
   sortCustomerSummaries,
   toAmount,
 } from "@/lib/credit/calculations";
-import {
-  getDemoParty,
-  insertDemoParty,
-  insertDemoTransaction,
-  listDemoParties,
-  listDemoTransactions,
-  listDemoTransactionsForParty,
-} from "@/lib/credit/demo-store";
-import { hasSamePartyIdentity } from "@/lib/credit/party-identity";
 import {
   CREDIT_SALE_TYPE,
   CUSTOMER_PAYMENT_TYPE,
@@ -28,7 +19,6 @@ import {
   type Party,
   type PartyType,
 } from "@/lib/credit/types";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const PARTY_COLUMNS = "id, business_id, name, phone, type, address, created_at";
 const TRANSACTION_COLUMNS =
@@ -76,14 +66,17 @@ function logQueryError(label: string, error: QueryError): void {
   });
 }
 
-function normalizeParty(row: PartyRow): Party | null {
+function normalizeParty(
+  row: PartyRow,
+  fallbackBusinessId: string,
+): Party | null {
   if (row.type !== "customer" && row.type !== "supplier" && row.type !== "both") {
     return null;
   }
 
   return {
     id: row.id,
-    business_id: row.business_id || BUSINESS_ID,
+    business_id: row.business_id || fallbackBusinessId,
     name: row.name,
     phone: row.phone ?? null,
     type: row.type as PartyType,
@@ -92,10 +85,13 @@ function normalizeParty(row: PartyRow): Party | null {
   };
 }
 
-function normalizeTransaction(row: TransactionRow): CreditTransaction {
+function normalizeTransaction(
+  row: TransactionRow,
+  fallbackBusinessId: string,
+): CreditTransaction {
   return {
     id: row.id,
-    business_id: row.business_id || BUSINESS_ID,
+    business_id: row.business_id || fallbackBusinessId,
     type: row.type,
     party_id: row.party_id ?? null,
     amount: toAmount(row.amount),
@@ -111,29 +107,18 @@ function normalizeTransaction(row: TransactionRow): CreditTransaction {
 export async function getCustomerAccounts(
   today: string,
 ): Promise<CustomerSummary[]> {
-  if (!isSupabaseConfigured()) {
-    const parties = listDemoParties().filter((party) => isCustomerParty(party));
-    const transactions = listDemoTransactions();
-
-    return sortCustomerSummaries(
-      parties.map(
-        (party) => buildCustomerAccount(party, transactions, today).summary,
-      ),
-    );
-  }
-
-  const supabase = createServerSupabaseClient();
+  const { supabase, business } = await requireBusinessPermission("view_finances");
   const [partiesResult, transactionsResult] = await Promise.all([
     supabase
       .from("parties")
       .select(PARTY_COLUMNS)
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", business.id)
       .in("type", ["customer", "both"])
       .order("name", { ascending: true }),
     supabase
       .from("transactions")
       .select(TRANSACTION_COLUMNS)
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", business.id)
       .in("type", [CREDIT_SALE_TYPE, CUSTOMER_PAYMENT_TYPE])
       .order("transaction_date", { ascending: true }),
   ]);
@@ -152,12 +137,12 @@ export async function getCustomerAccounts(
   }
 
   const parties = ((partiesResult.data ?? []) as unknown as PartyRow[])
-    .map(normalizeParty)
+    .map((row) => normalizeParty(row, business.id))
     .filter((party): party is Party => party !== null);
 
   const transactions = (
     (transactionsResult.data ?? []) as unknown as TransactionRow[]
-  ).map(normalizeTransaction);
+  ).map((row) => normalizeTransaction(row, business.id));
 
   return sortCustomerSummaries(
     parties.map(
@@ -170,30 +155,18 @@ export async function getCustomerAccount(
   id: string,
   today: string,
 ): Promise<CustomerAccount | null> {
-  if (!isSupabaseConfigured()) {
-    const party = getDemoParty(id);
-
-    if (!party || !isCustomerParty(party)) return null;
-
-    return buildCustomerAccount(
-      party,
-      listDemoTransactionsForParty(id),
-      today,
-    );
-  }
-
-  const supabase = createServerSupabaseClient();
+  const { supabase, business } = await requireBusinessPermission("view_finances");
   const [partyResult, transactionsResult] = await Promise.all([
     supabase
       .from("parties")
       .select(PARTY_COLUMNS)
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", business.id)
       .eq("id", id)
       .maybeSingle(),
     supabase
       .from("transactions")
       .select(TRANSACTION_COLUMNS)
-      .eq("business_id", BUSINESS_ID)
+      .eq("business_id", business.id)
       .eq("party_id", id)
       .in("type", [CREDIT_SALE_TYPE, CUSTOMER_PAYMENT_TYPE])
       .order("transaction_date", { ascending: true }),
@@ -216,13 +189,14 @@ export async function getCustomerAccount(
 
   const party = normalizeParty(
     partyResult.data as unknown as PartyRow,
+    business.id,
   );
 
   if (!party || !isCustomerParty(party)) return null;
 
   const transactions = (
     (transactionsResult.data ?? []) as unknown as TransactionRow[]
-  ).map(normalizeTransaction);
+  ).map((row) => normalizeTransaction(row, business.id));
 
   return buildCustomerAccount(party, transactions, today);
 }
@@ -230,20 +204,11 @@ export async function getCustomerAccount(
 export async function createCustomer(
   input: CreatePartyInput,
 ): Promise<Party> {
-  if (!isSupabaseConfigured()) {
-    if (listDemoParties().some((party) => hasSamePartyIdentity(party, input))) {
-      throw new Error(
-        "A customer or supplier with this name and phone number already exists.",
-      );
-    }
-    return insertDemoParty(input);
-  }
-
-  const supabase = createServerSupabaseClient();
+  const { supabase, business } = await requireBusinessPermission("manage_finances");
   const { data, error } = await supabase
     .from("parties")
     .insert({
-      business_id: BUSINESS_ID,
+      business_id: business.id,
       name: input.name,
       phone: input.phone,
       type: input.type,
@@ -265,7 +230,7 @@ export async function createCustomer(
     throw new Error("Could not save the customer.");
   }
 
-  const party = normalizeParty(data as unknown as PartyRow);
+  const party = normalizeParty(data as unknown as PartyRow, business.id);
 
   if (!party) {
     throw new Error("The customer was saved but could not be read back.");
@@ -277,15 +242,11 @@ export async function createCustomer(
 async function insertTransaction(
   input: CreditTransactionInsert,
 ): Promise<CreditTransaction> {
-  if (!isSupabaseConfigured()) {
-    return insertDemoTransaction(input);
-  }
-
-  const supabase = createServerSupabaseClient();
+  const { supabase, business } = await requireBusinessPermission("manage_finances");
   const { data, error } = await supabase
     .from("transactions")
     .insert({
-      business_id: BUSINESS_ID,
+      business_id: business.id,
       ...input,
     })
     .select(TRANSACTION_COLUMNS)
@@ -296,7 +257,7 @@ async function insertTransaction(
     throw new Error("Could not save the transaction.");
   }
 
-  return normalizeTransaction(data as unknown as TransactionRow);
+  return normalizeTransaction(data as unknown as TransactionRow, business.id);
 }
 
 export async function createCreditSale(

@@ -9,9 +9,11 @@ import {
   Calendar,
   FileText,
   LayoutGrid,
+  LogOut,
   Menu,
   Package,
   Search,
+  Settings,
   ShoppingCart,
   Truck,
   Users,
@@ -19,15 +21,22 @@ import {
   ChevronsUpDown,
 } from "lucide-react";
 import { NavbarActionContext } from "@/components/layout/navbar-action-context";
+import {
+  BusinessContextProvider,
+  useBusinessContext,
+} from "@/components/auth/business-context";
+import { signOut } from "@/app/auth/actions";
+import { can, type BusinessPermission } from "@/lib/auth/permissions";
 
 const NAV_ITEMS = [
-  { id: "overview", label: "Overview", href: "/", icon: LayoutGrid },
+  { id: "overview", label: "Overview", href: "/dashboard", icon: LayoutGrid },
   { id: "transactions", label: "Money Flow", href: "/transactions", icon: ArrowLeftRight },
   { id: "sales", label: "Product Sales", href: "/sales", icon: ShoppingCart },
   { id: "parties", label: "Customers", href: "/parties", icon: Users },
   { id: "suppliers", label: "Suppliers", href: "/suppliers", icon: Truck },
   { id: "inventory", label: "Stockroom", href: "/inventory", icon: Package },
   { id: "reports", label: "Reports", href: "/reports", icon: FileText },
+  { id: "settings", label: "Team", href: "/settings/members", icon: Settings },
 ];
 
 function NavigationLinks({
@@ -37,15 +46,47 @@ function NavigationLinks({
   pathname: string | null;
   onNavigate: () => void;
 }) {
+  const { context, loading } = useBusinessContext();
+  if (loading) {
+    return (
+      <p className="px-3 py-2 text-xs text-emerald-100/60" role="status">
+        Loading navigation…
+      </p>
+    );
+  }
+
+  const activeRole = context?.activeRole;
+  const visibleItems = activeRole
+    ? NAV_ITEMS.filter((item) => {
+        const permission: BusinessPermission =
+          item.id === "overview"
+            ? "view_dashboard"
+            : item.id === "settings"
+              ? "manage_members"
+              : item.id === "transactions" ||
+                item.id === "parties" ||
+                item.id === "suppliers"
+              ? "view_finances"
+              : item.id === "sales"
+                ? "manage_finances"
+                : item.id === "inventory"
+                  ? "view_products"
+                  : "view_reports";
+        return can(
+          activeRole,
+          permission,
+          context.activePermissions,
+        );
+      })
+    : [];
+
   return (
     <nav aria-label="Main navigation" className="space-y-1">
-      {NAV_ITEMS.map((item) => {
+      {visibleItems.map((item) => {
         const Icon = item.icon;
         const active =
           pathname !== null &&
-          (item.href === "/"
-            ? pathname === "/"
-            : pathname === item.href || pathname.startsWith(`${item.href}/`));
+          (pathname === item.href || pathname.startsWith(`${item.href}/`));
 
         return (
           <Link
@@ -74,7 +115,84 @@ function ActiveNavigation({ onNavigate }: { onNavigate: () => void }) {
   );
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+function BusinessWorkspace() {
+  const { context, loading, error } = useBusinessContext();
+  const activeBusiness = context?.activeBusinessName;
+  const activeRole = context?.activeRole;
+
+  const content = (
+    <div className="flex min-w-0 items-center gap-2.5">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#F4C44E]/40 bg-[#F4C44E]/20 text-xs font-bold text-[#F4C44E]">
+        BT
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-xs font-semibold text-white">
+          {activeBusiness ?? (loading ? "Loading business…" : "No business selected")}
+        </p>
+        <p className="truncate text-[10px] capitalize text-emerald-200/70">
+            {error ?? activeRole ?? "Business workspace"}
+        </p>
+      </div>
+    </div>
+  );
+
+  if ((context?.memberships.length ?? 0) > 1) {
+    return (
+      <Link
+        href="/business/select"
+        className="flex items-center justify-between gap-2.5 rounded-xl bg-white/8 px-3 py-2.5 hover:bg-white/12"
+        aria-label="Switch business"
+      >
+        {content}
+        <ChevronsUpDown
+          className="h-3.5 w-3.5 shrink-0 text-emerald-200/60"
+          aria-hidden="true"
+        />
+      </Link>
+    );
+  }
+
+  return <div className="rounded-xl bg-white/8 px-3 py-2.5">{content}</div>;
+}
+
+function AccountControls() {
+  const { context, loading } = useBusinessContext();
+  const displayName = context?.user.fullName || context?.user.email || "";
+  const initials =
+    displayName
+      .split(/[\s@.]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || (loading ? "…" : "?");
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="hidden max-w-36 truncate text-xs font-medium text-stone-600 xl:block">
+        {displayName}
+      </div>
+      <div
+        className="hidden h-9 w-9 items-center justify-center rounded-full bg-[#0C3B37] text-xs font-semibold text-white sm:flex"
+        aria-label={displayName ? `Signed in as ${displayName}` : "Account"}
+      >
+        {initials}
+      </div>
+      <form action={signOut}>
+        <button
+          type="submit"
+          aria-label="Log out"
+          title="Log out"
+          className="rounded-lg border border-stone-200 p-2 text-stone-600 hover:bg-stone-100 hover:text-stone-900"
+        >
+          <LogOut className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function AppShellContent({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [navbarAction, setNavbarAction] = useState<{
     id: string;
@@ -89,6 +207,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     },
     [],
   );
+
+  const usesPublicLayout = [
+    "/",
+    "/login",
+    "/register",
+    "/forgot-password",
+    "/reset-password",
+    "/setup/business",
+    "/business/select",
+    "/invite",
+    "/auth/callback",
+    "/privacy",
+    "/terms",
+  ].some((path) => pathname === path || pathname?.startsWith(`${path}/`));
+
+  if (usesPublicLayout) return <>{children}</>;
 
   const sidebarContent = (
     <div className="flex h-full flex-col justify-between bg-[#0C3B37] px-3.5 py-5 text-white">
@@ -131,30 +265,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <div className="border-t border-white/10 pt-4">
-        <div className="flex items-center justify-between gap-2.5 rounded-xl bg-white/8 px-3 py-2.5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#F4C44E]/40 bg-[#F4C44E]/20 text-xs font-bold text-[#F4C44E]">
-              BT
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-white">
-                BizTrack General Store
-              </p>
-              <p className="truncate text-[10px] text-emerald-200/70">
-                Pokhara
-              </p>
-            </div>
-          </div>
-          <ChevronsUpDown
-            className="h-3.5 w-3.5 shrink-0 text-emerald-200/60"
-            aria-hidden="true"
-          />
-        </div>
+        <BusinessWorkspace />
       </div>
     </div>
   );
 
   return (
+    <BusinessContextProvider>
     <NavbarActionContext.Provider value={registerNavbarAction}>
       <div className="flex min-h-screen bg-[#F8F6F2] text-stone-900">
         <aside className="sticky top-0 hidden h-screen w-56 shrink-0 lg:block">
@@ -212,9 +329,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Calendar className="h-3.5 w-3.5 text-[#0C3B37]" />
                   <span>Today</span>
                 </div>
-                <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-[#0C3B37] text-xs font-semibold text-white sm:flex">
-                  RJ
-                </div>
+                <AccountControls />
               </div>
             </div>
           </header>
@@ -223,5 +338,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     </NavbarActionContext.Provider>
+    </BusinessContextProvider>
+  );
+}
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div
+          className="min-h-screen bg-[#F8F6F2]"
+          role="status"
+          aria-label="Loading BizTrack"
+        />
+      }
+    >
+      <AppShellContent>{children}</AppShellContent>
+    </Suspense>
   );
 }

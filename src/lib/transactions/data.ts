@@ -1,5 +1,4 @@
-import { ACTOR_ID, BUSINESS_ID } from "@/lib/config";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { requireBusinessPermission } from "@/lib/auth/server";
 import { todayISO } from "@/lib/transactions/date";
 import { cashFlowType } from "@/lib/transactions/accounting";
 import type {
@@ -61,11 +60,11 @@ function logQueryError(label: string, error: QueryError): void {
 export async function getTransactions(
   filters: TransactionFilters,
 ): Promise<TransactionRow[]> {
-  const supabase = createServerSupabaseClient();
+  const { supabase, business } = await requireBusinessPermission("view_finances");
   let query = supabase
     .from("transactions")
     .select(TRANSACTION_COLUMNS)
-    .eq("business_id", BUSINESS_ID)
+    .eq("business_id", business.id)
     .in("type", [...ALLOWED_TYPES]);
 
   if (filters.from) query = query.gte("transaction_date", filters.from);
@@ -85,11 +84,11 @@ export async function getTransactions(
 }
 
 export async function getTotals(): Promise<Totals> {
-  const supabase = createServerSupabaseClient();
+  const { supabase, business } = await requireBusinessPermission("view_finances");
   const { data, error } = await supabase
     .from("transactions")
     .select("type, amount, payment_method, transaction_date")
-    .eq("business_id", BUSINESS_ID)
+    .eq("business_id", business.id)
     .in("type", [...CASH_FLOW_TYPES]);
 
   if (error) {
@@ -136,17 +135,6 @@ export async function getTotals(): Promise<Totals> {
 }
 
 export async function getRole(): Promise<Role> {
-  const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase
-    .from("business_members")
-    .select("role")
-    .eq("business_id", BUSINESS_ID)
-    .eq("actor_id", ACTOR_ID)
-    .maybeSingle();
-
-  if (error) {
-    logQueryError("getRole", error);
-    throw new Error("Failed to load role");
-  }
-  return data?.role === "owner" ? "owner" : "staff";
+  const { role } = await requireBusinessPermission("view_finances");
+  return role;
 }

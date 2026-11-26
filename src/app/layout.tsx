@@ -26,8 +26,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BizTrack — Business Dashboard",
-  description: "Track daily income, expenses, udharo, and stock in one place.",
+  title: {
+    default: "BizTrack — Business management made simple",
+    template: "%s · BizTrack",
+  },
+  description:
+    "Track money in, money out, inventory, and daily business activity in one simple workspace.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

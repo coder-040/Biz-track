@@ -41,7 +41,7 @@ import {
   type SupplierOrderColumn,
   type SupplierOrderStatus,
 } from "@/lib/suppliers/orders";
-import type { PartyRow, Role } from "@/lib/suppliers/types";
+import type { PartyRow } from "@/lib/suppliers/types";
 
 const COLUMNS: Array<{
   id: SupplierOrderStatus;
@@ -57,7 +57,7 @@ interface SupplierOrdersBoardProps {
   orders: SupplierOrder[];
   suppliers: PartyRow[];
   products: ProductOption[];
-  role: Role;
+  canManage: boolean;
   busy: boolean;
   onCreate: (input: NewSupplierOrderInput) => Promise<void>;
   onMove: (order: SupplierOrder, target: SupplierOrderColumn) => Promise<void>;
@@ -478,14 +478,13 @@ export function SupplierOrdersBoard({
   orders,
   suppliers,
   products,
-  role,
+  canManage,
   busy,
   onCreate,
   onMove,
   onRecordPayment,
 }: SupplierOrdersBoardProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const canManage = role === "owner";
   const selectedOrder = orders.find((order) => order.id === selectedId) ?? null;
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),

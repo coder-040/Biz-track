@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 
 import type { ActionState } from "@/lib/action-state";
-import { ACTOR_ID, ACTOR_NAME, BUSINESS_ID } from "@/lib/config";
+import { can } from "@/lib/auth/permissions";
+import { requireBusinessContext } from "@/lib/auth/server";
 import { isISODate, todayISOInTimeZone } from "@/lib/date";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -71,10 +71,17 @@ export async function recordProductSale(
     }
   }
 
+  const context = await requireBusinessContext();
+  if (
+    !can(context.role, "manage_finances", context.permissions) ||
+    !can(context.role, "manage_inventory", context.permissions)
+  ) {
+    return fail("You do not have permission to record product sales.");
+  }
+
   try {
-    const supabase = createServerSupabaseClient();
-    const { error } = await supabase.rpc("record_product_sale", {
-      p_business_id: BUSINESS_ID,
+    const { error } = await context.supabase.rpc("record_product_sale", {
+      p_business_id: context.business.id,
       p_product_id: productId,
       p_quantity: quantity,
       p_customer_id: customerId || null,
@@ -82,8 +89,8 @@ export async function recordProductSale(
       p_transaction_date: transactionDate,
       p_due_date: paymentMethod === "credit" ? dueDate : null,
       p_description: description || null,
-      p_actor_id: ACTOR_ID,
-      p_actor_name: ACTOR_NAME,
+      p_actor_id: context.user.id,
+      p_actor_name: context.user.user_metadata.full_name ?? null,
     });
 
     if (error) return fail(databaseMessage(error));

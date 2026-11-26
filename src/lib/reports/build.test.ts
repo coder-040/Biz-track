@@ -3,6 +3,7 @@ import { buildReport } from "@/lib/reports/build";
 import type { ReportSources } from "@/lib/reports/data";
 
 const sources: ReportSources = {
+  businessId: "test-business",
   transactions: [
     {
       id: "income-1",

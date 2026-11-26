@@ -25,8 +25,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RequiredMark } from "@/components/ui/required-mark";
+import { useBusinessContext } from "@/components/auth/business-context";
+import { can } from "@/lib/auth/permissions";
 import { writeAudit, type AuditEntry } from "@/lib/audit";
-import { ACTOR_ID, ACTOR_NAME, BUSINESS_ID } from "@/lib/config";
 import { formatCurrency } from "@/lib/format";
 import type { ProductOption } from "@/lib/inventory";
 import { supabase } from "@/lib/supabase/client";
@@ -179,6 +180,10 @@ export function SuppliersClient({
   role,
 }: SuppliersClientProps) {
   const router = useRouter();
+  const { context } = useBusinessContext();
+  const businessId = context?.activeBusinessId;
+  const actorId = context?.user.id;
+  const actorName = context?.user.fullName || context?.user.email || null;
   const [transactions, setTransactions] = useState(initialTransactions);
   const [orders, setOrders] = useState(initialOrders);
   const [supplierForm, setSupplierForm] = useState<SupplierFormState>(emptySupplierForm);
@@ -188,7 +193,11 @@ export function SuppliersClient({
   const [pendingAudit, setPendingAudit] = useState<AuditEntry | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const canManage = role === "owner";
+  const canManage = Boolean(
+    context?.activeRole &&
+      context.activeRole === role &&
+      can(context.activeRole, "manage_finances", context.activePermissions),
+  );
   const summaries = buildSummaries(initialParties, transactions, todayISO());
   const overdueSummaries = summaries.filter((summary) => summary.overdue);
   const totalPayable = summaries.reduce((total, summary) => total + summary.payable, 0);
@@ -209,24 +218,27 @@ export function SuppliersClient({
   }
 
   async function refreshLocalSupplierData() {
+    if (!businessId) {
+      throw new Error("Business account context is not ready.");
+    }
     const [transactionResult, orderResult, paymentResult] = await Promise.all([
       supabase
         .from("transactions")
         .select(TRANSACTION_COLUMNS)
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", businessId)
         .in("type", ["supplier_purchase", "supplier_payment"])
         .order("transaction_date", { ascending: false })
         .order("created_at", { ascending: false }),
       supabase
         .from("supplier_orders")
         .select(ORDER_COLUMNS)
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", businessId)
         .order("order_date", { ascending: true })
         .order("created_at", { ascending: true }),
       supabase
         .from("supplier_order_payments")
         .select(ORDER_PAYMENT_COLUMNS)
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", businessId)
         .order("payment_date", { ascending: true })
         .order("created_at", { ascending: true }),
     ]);
@@ -264,12 +276,23 @@ export function SuppliersClient({
     setEntryForm((previous) => ({ ...previous, [field]: value }));
   }
 
-  async function recordAudit(entry: AuditEntry) {
+  async function recordAudit(
+    entry: Omit<AuditEntry, "businessId" | "actorId" | "actorName">,
+  ) {
+    if (!businessId || !actorId) {
+      throw new Error("Business account context is not ready.");
+    }
+    const fullEntry: AuditEntry = {
+      ...entry,
+      businessId,
+      actorId,
+      actorName,
+    };
     try {
-      await writeAudit(entry);
+      await writeAudit(fullEntry);
       setPendingAudit(null);
     } catch (auditError) {
-      setPendingAudit(entry);
+      setPendingAudit(fullEntry);
       toast.error(
         `Saved, but audit logging failed: ${errorMessage(auditError)}.`,
         {
@@ -290,11 +313,15 @@ export function SuppliersClient({
       toast.error(validationError);
       return;
     }
+    if (!canManage || !businessId) {
+      toast.error("You do not have permission to manage supplier records.");
+      return;
+    }
 
     setBusy(true);
     try {
       const payload = {
-        business_id: BUSINESS_ID,
+        business_id: businessId,
         name: supplierForm.name.trim(),
         phone: supplierForm.phone.trim() || null,
         address: supplierForm.address.trim() || null,
@@ -354,7 +381,7 @@ export function SuppliersClient({
         .from("parties")
         .delete()
         .eq("id", party.id)
-        .eq("business_id", BUSINESS_ID);
+        .eq("business_id", businessId);
 
       if (dbError) throw dbError;
 
@@ -375,11 +402,13 @@ export function SuppliersClient({
   }
 
   async function handleCreateOrder(input: NewSupplierOrderInput) {
-    if (!canManage) throw new Error("Only an owner can create supplier orders.");
+    if (!canManage || !businessId || !actorId) {
+      throw new Error("You do not have permission to create supplier orders.");
+    }
     setBusy(true);
     try {
       const { error: rpcError } = await supabase.rpc("create_supplier_order", {
-        p_business_id: BUSINESS_ID,
+        p_business_id: businessId,
         p_supplier_id: input.supplierId,
         p_product_id: input.productId,
         p_quantity: Number(input.quantity),
@@ -392,8 +421,8 @@ export function SuppliersClient({
         p_payment_method:
           input.paymentType === "paid_now" ? input.paymentMethod : null,
         p_attachment_url: input.attachmentUrl.trim() || null,
-        p_actor_id: ACTOR_ID,
-        p_actor_name: ACTOR_NAME,
+        p_actor_id: actorId,
+        p_actor_name: actorName,
       });
 
       if (rpcError) throw rpcError;
@@ -432,11 +461,11 @@ export function SuppliersClient({
     setBusy(true);
     try {
       const { error: rpcError } = await supabase.rpc("set_supplier_order_status", {
-        p_business_id: BUSINESS_ID,
+        p_business_id: businessId,
         p_order_id: order.id,
         p_target_status: moveResult.order.status,
-        p_actor_id: ACTOR_ID,
-        p_actor_name: ACTOR_NAME,
+        p_actor_id: actorId,
+        p_actor_name: actorName,
       });
       if (rpcError) throw rpcError;
 
@@ -485,6 +514,10 @@ export function SuppliersClient({
       toast.error(validationError);
       return;
     }
+    if (!canManage || !businessId || !actorId) {
+      toast.error("You do not have permission to manage supplier records.");
+      return;
+    }
 
     if (entryForm.kind === "payment" && entryForm.orderId) {
       const order = orders.find((candidate) => candidate.id === entryForm.orderId);
@@ -511,14 +544,14 @@ export function SuppliersClient({
         const { data, error: rpcError } = await supabase.rpc(
           "record_supplier_order_payment",
           {
-            p_business_id: BUSINESS_ID,
+            p_business_id: businessId,
             p_supplier_id: entryForm.partyId,
             p_amount: Number(entryForm.amount),
             p_payment_method: entryForm.paymentMethod,
             p_payment_date: entryForm.transactionDate,
             p_order_id: entryForm.orderId || null,
-            p_actor_id: ACTOR_ID,
-            p_actor_name: ACTOR_NAME,
+            p_actor_id: actorId,
+            p_actor_name: actorName,
           },
         );
 
@@ -565,7 +598,7 @@ export function SuppliersClient({
       }
 
       const payload = {
-        business_id: BUSINESS_ID,
+        business_id: businessId,
         type: "supplier_purchase",
         party_id: entryForm.partyId,
         amount: Number(entryForm.amount),
@@ -584,7 +617,7 @@ export function SuppliersClient({
           .from("transactions")
           .update(payload)
           .eq("id", editingId)
-          .eq("business_id", BUSINESS_ID)
+          .eq("business_id", businessId)
           .select(TRANSACTION_COLUMNS)
           .single();
 
@@ -675,7 +708,7 @@ export function SuppliersClient({
         .from("transactions")
         .delete()
         .eq("id", tx.id)
-        .eq("business_id", BUSINESS_ID);
+        .eq("business_id", businessId);
 
       if (dbError) throw dbError;
 
@@ -895,7 +928,7 @@ export function SuppliersClient({
         suppliers={initialParties.filter(
           (party) => party.type === "supplier" || party.type === "both",
         )}
-        role={role}
+        canManage={canManage}
         busy={busy}
         onCreate={handleCreateOrder}
         onMove={handleOrderMove}

@@ -1,5 +1,4 @@
-import { BUSINESS_ID } from "@/lib/config";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { requireBusinessPermission } from "@/lib/auth/server";
 
 export interface ReportTransaction {
   id: string;
@@ -44,6 +43,7 @@ export interface ReportMovement {
 }
 
 export interface ReportSources {
+  businessId: string;
   transactions: ReportTransaction[];
   parties: ReportParty[];
   products: ReportProduct[];
@@ -73,7 +73,7 @@ async function readAllPages<T>(
 }
 
 export async function getReportSources(): Promise<ReportSources> {
-  const supabase = createServerSupabaseClient();
+  const { supabase, business } = await requireBusinessPermission("view_reports");
   const [transactions, parties, products, movements] = await Promise.all([
     readAllPages<ReportTransaction>(async (from, to) => {
       const { data, error } = await supabase
@@ -81,7 +81,7 @@ export async function getReportSources(): Promise<ReportSources> {
         .select(
           "id, type, party_id, amount, category, payment_method, description, due_date, transaction_date, created_at",
         )
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", business.id)
         .order("transaction_date", { ascending: true })
         .range(from, to);
       return { data: data as ReportTransaction[] | null, error };
@@ -90,7 +90,7 @@ export async function getReportSources(): Promise<ReportSources> {
       const { data, error } = await supabase
         .from("parties")
         .select("id, name, type")
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", business.id)
         .order("name", { ascending: true })
         .range(from, to);
       return { data: data as ReportParty[] | null, error };
@@ -101,7 +101,7 @@ export async function getReportSources(): Promise<ReportSources> {
         .select(
           "id, name, sku, category, purchase_price, current_stock, min_stock, is_active, created_at",
         )
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", business.id)
         .order("name", { ascending: true })
         .range(from, to);
       return { data: data as ReportProduct[] | null, error };
@@ -112,12 +112,12 @@ export async function getReportSources(): Promise<ReportSources> {
         .select(
           "id, product_id, transaction_id, type, quantity, unit_cost, reason, created_at",
         )
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", business.id)
         .order("created_at", { ascending: true })
         .range(from, to);
       return { data: data as ReportMovement[] | null, error };
     }),
   ]);
 
-  return { transactions, parties, products, movements };
+  return { businessId: business.id, transactions, parties, products, movements };
 }
