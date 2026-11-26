@@ -32,6 +32,7 @@ import { supabase } from "@/lib/supabase/client";
 import { todayISO } from "@/lib/date";
 import {
   buildSummaries,
+  createSupplierOrderPaymentForm,
   payableFor,
   validateEntryForm,
   validateSupplierForm,
@@ -460,13 +461,9 @@ export function SuppliersClient({
 
   function startOrderPayment(order: SupplierOrder) {
     setEditingId(null);
-    setEntryForm({
-      ...emptyEntryForm(),
-      kind: "payment",
-      partyId: order.supplierId,
-      orderId: order.id,
-      category: "Supplier payment",
-    });
+    setEntryForm(
+      createSupplierOrderPaymentForm(order.supplierId, order.id),
+    );
     window.requestAnimationFrame(() => {
       document
         .getElementById("supplier-entry-form")

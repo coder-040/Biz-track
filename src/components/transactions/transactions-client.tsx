@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -160,14 +160,37 @@ export function TransactionsClient({
   const router = useRouter();
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const filters = initialFilters;
+  const [rows, setRows] = useState(initialRows);
+  const [filters, setFilters] = useState(initialFilters);
+  const [filtering, setFiltering] = useState(false);
+  const [filterError, setFilterError] = useState<string | null>(null);
+  const filterRequest = useRef(0);
+  const [serverSnapshot, setServerSnapshot] = useState({
+    rows: initialRows,
+    filters: initialFilters,
+  });
   const [pendingAudit, setPendingAudit] = useState<AuditEntry | null>(null);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    filterRequest.current += 1;
+  }, [initialFilters, initialRows]);
+
+  if (
+    serverSnapshot.rows !== initialRows ||
+    serverSnapshot.filters !== initialFilters
+  ) {
+    setServerSnapshot({ rows: initialRows, filters: initialFilters });
+    setRows(initialRows);
+    setFilters(initialFilters);
+    setFiltering(false);
+    setFilterError(null);
+  }
+
   const canManage = role === "owner";
-  const totalPages = Math.max(1, Math.ceil(initialRows.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const currentPage = Math.min(filters.page, totalPages);
-  const visibleRows = initialRows.slice(
+  const visibleRows = rows.slice(
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
@@ -337,6 +360,40 @@ export function TransactionsClient({
     setForm(emptyForm());
   }
 
+  async function loadFilteredRows(next: TransactionFilters) {
+    const requestId = ++filterRequest.current;
+    setFiltering(true);
+    setFilterError(null);
+
+    try {
+      let query = supabase
+        .from("transactions")
+        .select(TRANSACTION_COLUMNS)
+        .eq("business_id", BUSINESS_ID)
+        .in("type", ["income", "expense"]);
+
+      if (next.from) query = query.gte("transaction_date", next.from);
+      if (next.to) query = query.lte("transaction_date", next.to);
+      if (next.category) query = query.eq("category", next.category);
+      if (next.method) query = query.eq("payment_method", next.method);
+
+      const { data, error: queryError } = await query
+        .order("transaction_date", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      if (queryError) throw queryError;
+      if (requestId !== filterRequest.current) return;
+      setRows((data ?? []) as unknown as TransactionRow[]);
+    } catch (error) {
+      if (requestId !== filterRequest.current) return;
+      const message = errorMessage(error);
+      setFilterError(`Could not update transactions: ${message}`);
+      toast.error(`Could not update transactions: ${message}`);
+    } finally {
+      if (requestId === filterRequest.current) setFiltering(false);
+    }
+  }
+
   function updateFilters(patch: Partial<TransactionFilters>) {
     const next: TransactionFilters = {
       ...filters,
@@ -344,7 +401,20 @@ export function TransactionsClient({
       page: patch.page ?? 1,
     };
     const query = filtersToQuery(next);
-    router.replace(query ? `/transactions?${query}` : "/transactions");
+    window.history.replaceState(
+      null,
+      "",
+      query ? `/transactions?${query}` : "/transactions",
+    );
+    setFilters(next);
+
+    const filtersChanged = [
+      "from",
+      "to",
+      "category",
+      "method",
+    ].some((key) => key in patch);
+    if (filtersChanged) void loadFilteredRows(next);
   }
 
   function applyPreset(preset: "today" | "week" | "month") {
@@ -564,6 +634,11 @@ export function TransactionsClient({
           <CardTitle>Filters</CardTitle>
         </CardHeader>
         <CardContent>
+          {filterError ? (
+            <p className="mb-3 text-sm text-destructive" role="alert">
+              {filterError}
+            </p>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div>
               <label className={labelClass} htmlFor="filter-from">
@@ -661,10 +736,17 @@ export function TransactionsClient({
 
       <Card>
         <CardHeader>
-          <CardTitle>Transactions</CardTitle>
+          <CardTitle>
+            Transactions
+            {filtering ? (
+              <span className="ml-2 text-sm font-normal text-muted-foreground" aria-live="polite">
+                Updating…
+              </span>
+            ) : null}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          {initialRows.length === 0 ? (
+          {rows.length === 0 ? (
             <Card size="sm" className="border border-dashed ring-0">
               <CardContent className="text-sm text-muted-foreground">
                 No transactions match the current filters. Add one above or clear
@@ -764,7 +846,7 @@ export function TransactionsClient({
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-muted-foreground">
-                  Page {currentPage} of {totalPages} · {initialRows.length}{" "}
+                  Page {currentPage} of {totalPages} · {rows.length}{" "}
                   transactions
                 </p>
                 <div className="flex gap-2">

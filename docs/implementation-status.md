@@ -63,13 +63,14 @@ This is **not yet a fully verified MVP deployment**. The latest `supabase/schema
 - Moved the dashboard Alerts action into the navbar, removed the requested dashboard action buttons, and reordered Record sale before Quick Add.
 - Blocked deletion of parties with open customer credit or supplier payable at the database layer; supplier UI also gives a specific outstanding-payable message. No customer-delete UI currently exists.
 - Added duplicate product-name prevention and duplicate party name/phone detection across customer/supplier types.
+- Fixed the supplier-order payment form so its default Cash method is also the value submitted and validated.
 - Added BizTrack SVG branding for the sidebar/favicon, operation toasts, updated loading skeletons, and [`design.md`](../design.md).
 - Fixed the stale supplier reminder path: the alert no longer presents a raw supplier purchase when no current supplier balance exists.
 
-### Investigated, but not changed
+### Follow-up changes
 
-- Money Flow filter changes update the URL and trigger a Next.js server-component refresh; the earlier investigation found this was not a full document reload. No separate filter-navigation refactor was made.
-- Transfer/Reconcile and Passbook routes remain placeholder pages; their dashboard buttons were removed as requested.
+- Money Flow filters now update the list in the client and synchronize the URL with the native History API, avoiding a server-component refresh for filter changes.
+- Transfer/Reconcile and Passbook routes were removed at the user's request; their dashboard buttons had already been removed.
 
 ## Operational and product gaps to resolve
 
@@ -81,9 +82,9 @@ This is **not yet a fully verified MVP deployment**. The latest `supabase/schema
 
 ## Verification snapshot
 
-The current working tree's application checks passed after the alert regression fix:
+The current working tree's application checks passed after the latest follow-up changes:
 
-- `npm test` — 67 tests passed.
+- `npm test` — 68 tests passed.
 - `npm run lint` — passed.
 - `npx tsc --noEmit` — passed.
 - `npm run build -- --webpack` — passed.

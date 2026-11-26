@@ -131,6 +131,25 @@ export function validateSupplierForm(form: SupplierFormState): string | null {
   return null;
 }
 
+export function createSupplierOrderPaymentForm(
+  partyId: string,
+  orderId: string,
+  transactionDate: string = todayISO(),
+): EntryFormState {
+  return {
+    kind: "payment",
+    partyId,
+    orderId,
+    amount: "",
+    category: "Supplier payment",
+    paymentMethod: "cash",
+    transactionDate,
+    dueDate: "",
+    description: "",
+    attachmentUrl: "",
+  };
+}
+
 export function validateEntryForm(
   form: EntryFormState,
   parties: PartyRow[],
