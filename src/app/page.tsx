@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getDashboardData } from "@/lib/dashboard";
 import { formatNPR, formatDate } from "@/lib/format";
 import {
@@ -8,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton";
 import { WeeklyCashFlow } from "@/components/dashboard/weekly-cash-flow";
 import { AlertsPanel } from "@/components/dashboard/alerts-panel";
 import { QuickAddTransactionDialog } from "@/components/transactions/quick-add-transaction-dialog";
@@ -63,7 +65,7 @@ function getPaymentBadge(method: string) {
   }
 }
 
-export default async function DashboardPage() {
+async function DashboardContent() {
   let data;
   let error: string | null = null;
 
@@ -455,5 +457,13 @@ export default async function DashboardPage() {
         </div>
       </div>
     </DashboardShell>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<DashboardSkeleton />}>
+      <DashboardContent />
+    </Suspense>
   );
 }

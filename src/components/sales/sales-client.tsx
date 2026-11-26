@@ -11,6 +11,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { addDaysISO } from "@/lib/date";
 import type { ProductSaleProduct, SaleCustomer } from "@/lib/sales/data";
 import { formatCurrency, formatQuantity } from "@/lib/format";
@@ -107,7 +108,9 @@ export function SalesClient({
     <form onSubmit={handleSubmit} className="grid gap-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="sale-product">Product</Label>
+              <Label htmlFor="sale-product">
+                Product <RequiredMark />
+              </Label>
               <select
                 id="sale-product"
                 name="product_id"
@@ -134,7 +137,9 @@ export function SalesClient({
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="sale-quantity">Quantity</Label>
+              <Label htmlFor="sale-quantity">
+                Quantity <RequiredMark />
+              </Label>
               <Input
                 id="sale-quantity"
                 name="quantity"
@@ -154,7 +159,9 @@ export function SalesClient({
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="sale-payment-method">Payment</Label>
+              <Label htmlFor="sale-payment-method">
+                Payment <RequiredMark />
+              </Label>
               <select
                 id="sale-payment-method"
                 name="payment_method"
@@ -180,7 +187,9 @@ export function SalesClient({
             {paymentMethod === "credit" ? (
               <>
                 <div className="grid gap-2">
-                  <Label htmlFor="sale-customer">Customer</Label>
+                  <Label htmlFor="sale-customer">
+                    Customer <RequiredMark />
+                  </Label>
                   <select
                     id="sale-customer"
                     name="customer_id"
@@ -206,7 +215,9 @@ export function SalesClient({
                   ) : null}
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="sale-due-date">Due date</Label>
+                  <Label htmlFor="sale-due-date">
+                    Due date <RequiredMark />
+                  </Label>
                   <Input
                     id="sale-due-date"
                     name="due_date"
@@ -227,7 +238,9 @@ export function SalesClient({
             )}
 
             <div className="grid gap-2">
-              <Label htmlFor="sale-date">Sale date</Label>
+              <Label htmlFor="sale-date">
+                Sale date <RequiredMark />
+              </Label>
               <Input
                 id="sale-date"
                 name="transaction_date"

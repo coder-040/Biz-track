@@ -64,7 +64,8 @@ This is **not yet a fully verified MVP deployment**. The latest `supabase/schema
 - Blocked deletion of parties with open customer credit or supplier payable at the database layer; supplier UI also gives a specific outstanding-payable message. No customer-delete UI currently exists.
 - Added duplicate product-name prevention and duplicate party name/phone detection across customer/supplier types.
 - Fixed the supplier-order payment form so its default Cash method is also the value submitted and validated.
-- Added BizTrack SVG branding for the sidebar/favicon, operation toasts, updated loading skeletons, and [`design.md`](../design.md).
+- Added BizTrack SVG branding for the sidebar/favicon, operation toasts, and [`design.md`](../design.md). Dashboard, Stockroom, and Reports now share prominent page-specific skeleton layouts between route-level loading and their data-streaming Suspense fallbacks, with accessible loading labels.
+- Added a consistent red asterisk for required fields across dialogs and transaction forms; labels no longer spell out “required,” and conditional fields only show the marker while required.
 - Fixed the stale supplier reminder path: the alert no longer presents a raw supplier purchase when no current supplier balance exists.
 
 ### Follow-up changes
@@ -82,12 +83,11 @@ This is **not yet a fully verified MVP deployment**. The latest `supabase/schema
 
 ## Verification snapshot
 
-The current working tree's application checks passed after the latest follow-up changes:
+The latest UI updates passed:
 
-- `npm test` — 68 tests passed.
-- `npm run lint` — passed.
-- `npx tsc --noEmit` — passed.
-- `npm run build -- --webpack` — passed.
-- `git diff --check` — passed.
+- `npm run lint`
+- `npx tsc --noEmit`
+- `npm run build -- --webpack`
+- `git diff --check`
 
-These are local code checks. They do **not** validate the Supabase migration or live database RPC behavior.
+The initial streamed HTML contains page-specific skeletons for `/`, `/inventory`, and `/reports`; all three routes returned HTTP 200 after the changes. No automated test command was run for these UI-only updates. These checks do **not** validate the Supabase migration or live database RPC behavior.

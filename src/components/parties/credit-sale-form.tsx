@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { Textarea } from "@/components/ui/textarea";
 import { initialActionState } from "@/lib/action-state";
 import {
@@ -83,7 +84,7 @@ export function CreditSaleForm({
 
       <div>
         <Label htmlFor={`${idPrefix}-amount`} className={labelClass}>
-          Amount <span className="text-destructive">*</span>
+          Amount <RequiredMark />
         </Label>
         <Input
           id={`${idPrefix}-amount`}
@@ -102,7 +103,7 @@ export function CreditSaleForm({
 
       <div>
         <Label htmlFor={`${idPrefix}-category`} className={labelClass}>
-          Category <span className="text-destructive">*</span>
+          Category <RequiredMark />
         </Label>
         <Input
           id={`${idPrefix}-category`}
@@ -120,7 +121,7 @@ export function CreditSaleForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor={`${idPrefix}-transaction-date`} className={labelClass}>
-            Transaction date <span className="text-destructive">*</span>
+            Transaction date <RequiredMark />
           </Label>
           <Input
             id={`${idPrefix}-transaction-date`}
@@ -144,7 +145,7 @@ export function CreditSaleForm({
 
         <div>
           <Label htmlFor={`${idPrefix}-due-date`} className={labelClass}>
-            Due date <span className="text-destructive">*</span>
+            Due date <RequiredMark />
           </Label>
           <Input
             id={`${idPrefix}-due-date`}

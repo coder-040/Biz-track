@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { ACTOR_ID, ACTOR_NAME, BUSINESS_ID } from "@/lib/config";
 import { supabase } from "@/lib/supabase/client";
 import { writeAudit } from "@/lib/transactions/audit";
@@ -484,7 +485,7 @@ export function TransactionsClient({
           <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className={labelClass} htmlFor="transaction-type">
-                Type
+                Type <RequiredMark />
               </label>
               <select
                 id="transaction-type"
@@ -502,7 +503,7 @@ export function TransactionsClient({
 
             <div>
               <label className={labelClass} htmlFor="transaction-amount">
-                Amount
+                Amount <RequiredMark />
               </label>
               <Input
                 id="transaction-amount"
@@ -520,7 +521,7 @@ export function TransactionsClient({
 
             <div>
               <label className={labelClass} htmlFor="transaction-date">
-                Date
+                Date <RequiredMark />
               </label>
               <Input
                 id="transaction-date"
@@ -537,7 +538,7 @@ export function TransactionsClient({
 
             <div>
               <label className={labelClass} htmlFor="transaction-category">
-                Category
+                Category <RequiredMark />
               </label>
               <Input
                 id="transaction-category"
@@ -551,7 +552,7 @@ export function TransactionsClient({
 
             <div>
               <label className={labelClass} htmlFor="transaction-method">
-                Payment method
+                Payment method <RequiredMark />
               </label>
               <select
                 id="transaction-method"

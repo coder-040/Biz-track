@@ -24,6 +24,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { writeAudit, type AuditEntry } from "@/lib/audit";
 import { ACTOR_ID, ACTOR_NAME, BUSINESS_ID } from "@/lib/config";
 import { formatCurrency } from "@/lib/format";
@@ -755,7 +756,7 @@ export function SuppliersClient({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1 sm:col-span-2">
                       <label className={labelClass} htmlFor="supplier-name">
-                        Name
+                        Name <RequiredMark />
                       </label>
                       <Input
                         id="supplier-name"
@@ -795,7 +796,7 @@ export function SuppliersClient({
                     </div>
                     <div className="space-y-1 sm:col-span-2">
                       <label className={labelClass} htmlFor="supplier-type">
-                        Type
+                        Type <RequiredMark />
                       </label>
                       <select
                         id="supplier-type"
@@ -913,7 +914,9 @@ export function SuppliersClient({
           <form onSubmit={handleEntrySubmit} className="space-y-3">
             <div className={gridClass}>
               <div className="space-y-1">
-                <label className={labelClass} htmlFor="entry-kind">Record</label>
+                <label className={labelClass} htmlFor="entry-kind">
+                  Record <RequiredMark />
+                </label>
                 <select
                   id="entry-kind"
                   className={selectClass}
@@ -939,7 +942,9 @@ export function SuppliersClient({
                 </select>
               </div>
               <div className="space-y-1">
-                <label className={labelClass} htmlFor="entry-party">Supplier</label>
+                <label className={labelClass} htmlFor="entry-party">
+                  Supplier <RequiredMark />
+                </label>
                 <select
                   id="entry-party"
                   className={selectClass}
@@ -1002,7 +1007,9 @@ export function SuppliersClient({
                 </div>
               ) : null}
               <div className="space-y-1">
-                <label className={labelClass} htmlFor="entry-amount">Amount</label>
+                <label className={labelClass} htmlFor="entry-amount">
+                  Amount <RequiredMark />
+                </label>
                 <Input
                   id="entry-amount"
                   inputMode="decimal"
@@ -1012,7 +1019,9 @@ export function SuppliersClient({
                 />
               </div>
               <div className="space-y-1">
-                <label className={labelClass} htmlFor="entry-category">Category</label>
+                <label className={labelClass} htmlFor="entry-category">
+                  Category <RequiredMark />
+                </label>
                 <Input
                   id="entry-category"
                   value={entryForm.category}
@@ -1021,7 +1030,10 @@ export function SuppliersClient({
                 />
               </div>
               <div className="space-y-1">
-                <label className={labelClass} htmlFor="entry-method">Payment method</label>
+                <label className={labelClass} htmlFor="entry-method">
+                  Payment method{" "}
+                  {entryForm.kind === "payment" ? <RequiredMark /> : null}
+                </label>
                 {entryForm.kind === "purchase" ? (
                   <Input id="entry-method" value="credit" readOnly disabled />
                 ) : (
@@ -1042,7 +1054,9 @@ export function SuppliersClient({
                 )}
               </div>
               <div className="space-y-1">
-                <label className={labelClass} htmlFor="entry-date">Transaction date</label>
+                <label className={labelClass} htmlFor="entry-date">
+                  Transaction date <RequiredMark />
+                </label>
                 <Input
                   id="entry-date"
                   type="date"
@@ -1052,7 +1066,9 @@ export function SuppliersClient({
               </div>
               {entryForm.kind === "purchase" && (
                 <div className="space-y-1">
-                  <label className={labelClass} htmlFor="entry-due">Due date (required)</label>
+                  <label className={labelClass} htmlFor="entry-due">
+                    Due date <RequiredMark />
+                  </label>
                   <Input
                     id="entry-due"
                     type="date"

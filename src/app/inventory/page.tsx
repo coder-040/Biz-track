@@ -8,6 +8,7 @@ import {
 } from "lucide-react"
 
 import { AddProductDialog } from "@/components/inventory/add-product-dialog"
+import { InventorySkeleton } from "@/components/inventory/inventory-skeleton"
 import { ProductTable } from "@/components/inventory/product-table"
 import { StatCard } from "@/components/inventory/stat-card"
 import { Badge } from "@/components/ui/badge"
@@ -18,7 +19,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
 import { formatCurrency, formatQuantity } from "@/lib/format"
 import { getInventoryOverview } from "@/lib/inventory-data"
 
@@ -41,7 +41,15 @@ async function InventoryContent() {
   )
 
   return (
-    <>
+    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Inventory</h1>
+        <p className="text-sm text-muted-foreground">
+          Manage products, record stock movements and catch low stock before it
+          runs out.
+        </p>
+      </header>
+
       <section
         aria-label="Inventory summary"
         className="grid gap-4 sm:grid-cols-3"
@@ -168,40 +176,14 @@ async function InventoryContent() {
           </Card>
         </section>
       ) : null}
-    </>
-  )
-}
-
-function InventorySkeleton() {
-  return (
-    <div className="grid gap-6" aria-label="Loading inventory">
-      <div className="grid gap-4 sm:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <Skeleton key={index} className="h-28" />
-        ))}
-      </div>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <Skeleton className="h-80" />
-        <Skeleton className="h-64" />
-      </div>
-    </div>
+    </main>
   )
 }
 
 export default function InventoryPage() {
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Inventory</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage products, record stock movements and catch low stock before it
-          runs out.
-        </p>
-      </header>
-
-      <Suspense fallback={<InventorySkeleton />}>
-        <InventoryContent />
-      </Suspense>
-    </main>
+    <Suspense fallback={<InventorySkeleton />}>
+      <InventoryContent />
+    </Suspense>
   )
 }

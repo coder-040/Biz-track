@@ -8,6 +8,7 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { ACTOR_ID, ACTOR_NAME, BUSINESS_ID } from "@/lib/config";
 import { supabase } from "@/lib/supabase/client";
 import { writeAudit } from "@/lib/transactions/audit";
@@ -161,7 +162,7 @@ export function QuickAddTransactionDialog() {
         <form ref={formRef} onSubmit={handleSubmit} className="grid gap-4">
           <div className="grid gap-2">
             <label className="text-sm font-medium" htmlFor="quick-transaction-type">
-              Record as
+              Record as <RequiredMark />
             </label>
             <select
               id="quick-transaction-type"
@@ -181,7 +182,7 @@ export function QuickAddTransactionDialog() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
               <label className="text-sm font-medium" htmlFor="quick-transaction-amount">
-                Amount
+                Amount <RequiredMark />
               </label>
               <Input
                 id="quick-transaction-amount"
@@ -197,7 +198,7 @@ export function QuickAddTransactionDialog() {
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium" htmlFor="quick-transaction-date">
-                Date
+                Date <RequiredMark />
               </label>
               <Input
                 id="quick-transaction-date"
@@ -213,7 +214,7 @@ export function QuickAddTransactionDialog() {
 
           <div className="grid gap-2">
             <label className="text-sm font-medium" htmlFor="quick-transaction-category">
-              Category
+              Category <RequiredMark />
             </label>
             <Input
               id="quick-transaction-category"
@@ -227,7 +228,7 @@ export function QuickAddTransactionDialog() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
               <label className="text-sm font-medium" htmlFor="quick-transaction-method">
-                Payment method
+                Payment method <RequiredMark />
               </label>
               <select
                 id="quick-transaction-method"

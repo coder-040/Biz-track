@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { initialActionState } from "@/lib/action-state";
 import {
   isOverpayment,
@@ -108,7 +109,7 @@ export function PaymentForm({
 
       <div>
         <Label htmlFor={`${idPrefix}-amount`} className={labelClass}>
-          Amount <span className="text-destructive">*</span>
+          Amount <RequiredMark />
         </Label>
         <div className="flex gap-2">
           <Input
@@ -142,7 +143,7 @@ export function PaymentForm({
 
       <div>
         <Label htmlFor={`${idPrefix}-category`} className={labelClass}>
-          Category <span className="text-destructive">*</span>
+          Category <RequiredMark />
         </Label>
         <Input
           id={`${idPrefix}-category`}
@@ -160,7 +161,7 @@ export function PaymentForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor={`${idPrefix}-method`} className={labelClass}>
-            Payment method <span className="text-destructive">*</span>
+            Payment method <RequiredMark />
           </Label>
           <select
             id={`${idPrefix}-method`}
@@ -185,7 +186,7 @@ export function PaymentForm({
 
         <div>
           <Label htmlFor={`${idPrefix}-date`} className={labelClass}>
-            Transaction date <span className="text-destructive">*</span>
+            Transaction date <RequiredMark />
           </Label>
           <Input
             id={`${idPrefix}-date`}

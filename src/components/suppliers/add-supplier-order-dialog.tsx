@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { todayISOInTimeZone } from "@/lib/date";
 import {
   SUPPLIER_PAYMENT_METHODS,
@@ -116,7 +117,7 @@ export function AddSupplierOrderDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1 sm:col-span-2">
               <label className={labelClass} htmlFor="order-supplier">
-                Supplier
+                Supplier <RequiredMark />
               </label>
               <select
                 id="order-supplier"
@@ -135,7 +136,7 @@ export function AddSupplierOrderDialog({
             </div>
             <div className="space-y-1 sm:col-span-2">
               <label className={labelClass} htmlFor="order-product">
-                Product
+                Product <RequiredMark />
               </label>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <select
@@ -169,7 +170,7 @@ export function AddSupplierOrderDialog({
             </div>
             <div className="space-y-1">
               <label className={labelClass} htmlFor="order-quantity">
-                Quantity
+                Quantity <RequiredMark />
               </label>
               <Input
                 id="order-quantity"
@@ -183,7 +184,7 @@ export function AddSupplierOrderDialog({
             </div>
             <div className="space-y-1">
               <label className={labelClass} htmlFor="order-total">
-                Total amount (Rs.)
+                Total amount (Rs.) <RequiredMark />
               </label>
               <Input
                 id="order-total"
@@ -198,7 +199,7 @@ export function AddSupplierOrderDialog({
             </div>
             <div className="space-y-1">
               <label className={labelClass} htmlFor="order-category">
-                Category
+                Category <RequiredMark />
               </label>
               <Input
                 id="order-category"
@@ -210,7 +211,7 @@ export function AddSupplierOrderDialog({
             </div>
             <div className="space-y-1">
               <label className={labelClass} htmlFor="order-date">
-                Order date
+                Order date <RequiredMark />
               </label>
               <Input
                 id="order-date"
@@ -223,7 +224,7 @@ export function AddSupplierOrderDialog({
             </div>
             <div className="space-y-1">
               <label className={labelClass} htmlFor="order-due-date">
-                Due date (required)
+                Due date <RequiredMark />
               </label>
               <Input
                 id="order-due-date"
@@ -236,7 +237,7 @@ export function AddSupplierOrderDialog({
             </div>
             <div className="space-y-1">
               <label className={labelClass} htmlFor="order-payment-type">
-                Payment type
+                Payment type <RequiredMark />
               </label>
               <select
                 id="order-payment-type"
@@ -261,7 +262,7 @@ export function AddSupplierOrderDialog({
             {form.paymentType === "paid_now" ? (
               <div className="space-y-1">
                 <label className={labelClass} htmlFor="order-payment-method">
-                  Payment method
+                  Payment method <RequiredMark />
                 </label>
                 <select
                   id="order-payment-method"

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { addDaysISO } from "@/lib/date";
 import type { LowStockProduct } from "@/lib/dashboard";
 import type { SupplierOption } from "@/lib/inventory";
@@ -140,7 +141,10 @@ export function RestockProductDialog({
           <input type="hidden" name="paid_amount" value={amountPaid.toFixed(2)} />
 
           <div className="grid gap-2">
-            <Label htmlFor="restock-supplier">Supplier (optional)</Label>
+            <Label htmlFor="restock-supplier">
+              Supplier{" "}
+              {payable > 0 ? <RequiredMark /> : "(optional)"}
+            </Label>
             <select
               id="restock-supplier"
               name="supplier_id"
@@ -162,7 +166,9 @@ export function RestockProductDialog({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="restock-quantity">Quantity</Label>
+              <Label htmlFor="restock-quantity">
+                Quantity <RequiredMark />
+              </Label>
               <Input
                 id="restock-quantity"
                 name="quantity"
@@ -176,7 +182,9 @@ export function RestockProductDialog({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="restock-unit-cost">Unit cost</Label>
+              <Label htmlFor="restock-unit-cost">
+                Unit cost <RequiredMark />
+              </Label>
               <Input
                 id="restock-unit-cost"
                 name="unit_cost"
@@ -192,7 +200,9 @@ export function RestockProductDialog({
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="restock-payment-status">Payment status</Label>
+            <Label htmlFor="restock-payment-status">
+              Payment status <RequiredMark />
+            </Label>
             <select
               id="restock-payment-status"
               value={paymentStatus}
@@ -215,7 +225,9 @@ export function RestockProductDialog({
 
           {paymentStatus === "partial" ? (
             <div className="grid gap-2">
-              <Label htmlFor="restock-paid-amount">Amount paid now</Label>
+              <Label htmlFor="restock-paid-amount">
+                Amount paid now <RequiredMark />
+              </Label>
               <Input
                 id="restock-paid-amount"
                 type="number"
@@ -232,7 +244,9 @@ export function RestockProductDialog({
 
           {needsPaymentMethod ? (
             <div className="grid gap-2">
-              <Label htmlFor="restock-payment-method">Payment method</Label>
+              <Label htmlFor="restock-payment-method">
+                Payment method <RequiredMark />
+              </Label>
               <select
                 id="restock-payment-method"
                 name="payment_method"
@@ -253,7 +267,9 @@ export function RestockProductDialog({
 
           {payable > 0 ? (
             <div className="grid gap-2">
-              <Label htmlFor="restock-due-date">Due date for unpaid balance</Label>
+              <Label htmlFor="restock-due-date">
+                Due date for unpaid balance <RequiredMark />
+              </Label>
               <Input
                 id="restock-due-date"
                 name="due_date"
@@ -270,7 +286,9 @@ export function RestockProductDialog({
           )}
 
           <div className="grid gap-2">
-            <Label htmlFor="restock-date">Purchase date</Label>
+            <Label htmlFor="restock-date">
+              Purchase date <RequiredMark />
+            </Label>
             <Input
               id="restock-date"
               name="transaction_date"

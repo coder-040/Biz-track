@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { RequiredMark } from "@/components/ui/required-mark"
 import {
   Select,
   SelectContent,
@@ -79,7 +80,9 @@ export function AddProductDialog({ suppliers }: AddProductDialogProps) {
 
         <form ref={formRef} onSubmit={handleSubmit} className="grid gap-4">
           <div className="grid gap-2">
-            <Label htmlFor="name">Product name</Label>
+            <Label htmlFor="name">
+              Product name <RequiredMark />
+            </Label>
             <Input id="name" name="name" required placeholder="A4 paper ream" />
             <p className="text-xs text-muted-foreground">
               Product names must be unique. Include size or variant in the name
@@ -100,7 +103,9 @@ export function AddProductDialog({ suppliers }: AddProductDialogProps) {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="purchase_price">Purchase price</Label>
+              <Label htmlFor="purchase_price">
+                Purchase price <RequiredMark />
+              </Label>
               <Input
                 id="purchase_price"
                 name="purchase_price"
@@ -112,7 +117,9 @@ export function AddProductDialog({ suppliers }: AddProductDialogProps) {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="selling_price">Selling price</Label>
+              <Label htmlFor="selling_price">
+                Selling price <RequiredMark />
+              </Label>
               <Input
                 id="selling_price"
                 name="selling_price"
@@ -127,7 +134,9 @@ export function AddProductDialog({ suppliers }: AddProductDialogProps) {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="current_stock">Opening stock</Label>
+              <Label htmlFor="current_stock">
+                Opening stock <RequiredMark />
+              </Label>
               <Input
                 id="current_stock"
                 name="current_stock"
@@ -139,7 +148,9 @@ export function AddProductDialog({ suppliers }: AddProductDialogProps) {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="min_stock">Low-stock threshold</Label>
+              <Label htmlFor="min_stock">
+                Low-stock threshold <RequiredMark />
+              </Label>
               <Input
                 id="min_stock"
                 name="min_stock"

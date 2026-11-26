@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { RequiredMark } from "@/components/ui/required-mark"
 import { initialActionState } from "@/lib/action-state"
 import { formatQuantity } from "@/lib/format"
 import {
@@ -133,7 +134,9 @@ export function RecordMovementDialog({
           <input type="hidden" name="product_id" value={product.id} />
 
           <div className="grid gap-2">
-            <Label htmlFor="movement_type">Movement type</Label>
+            <Label htmlFor="movement_type">
+              Movement type <RequiredMark />
+            </Label>
             <Select
               name="type"
               value={type}
@@ -156,7 +159,9 @@ export function RecordMovementDialog({
 
           {type === "adjustment" ? (
             <div className="grid gap-2">
-              <Label htmlFor="adjustment_direction">Adjustment direction</Label>
+              <Label htmlFor="adjustment_direction">
+                Adjustment direction <RequiredMark />
+              </Label>
               <Select
                 name="adjustment_direction"
                 value={adjustmentDirection}
@@ -179,7 +184,9 @@ export function RecordMovementDialog({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="quantity">Quantity</Label>
+              <Label htmlFor="quantity">
+                Quantity <RequiredMark />
+              </Label>
               <Input
                 id="quantity"
                 name="quantity"
@@ -206,7 +213,7 @@ export function RecordMovementDialog({
 
           <div className="grid gap-2">
             <Label htmlFor="reason">
-              Reason {reasonRequired ? "(required)" : "(optional)"}
+              Reason {reasonRequired ? <RequiredMark /> : "(optional)"}
             </Label>
             <Textarea
               id="reason"

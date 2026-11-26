@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { Textarea } from "@/components/ui/textarea";
 import { initialActionState } from "@/lib/action-state";
 import { validatePartyInput } from "@/lib/credit/calculations";
@@ -69,7 +70,7 @@ export function AddCustomerForm({
 
       <div>
         <Label htmlFor="customer-name" className={labelClass}>
-          Name <span className="text-destructive">*</span>
+          Name <RequiredMark />
         </Label>
         <Input
           id="customer-name"
@@ -116,7 +117,7 @@ export function AddCustomerForm({
 
       <div>
         <Label htmlFor="customer-type" className={labelClass}>
-          Type <span className="text-destructive">*</span>
+          Type <RequiredMark />
         </Label>
         <select
           id="customer-type"
