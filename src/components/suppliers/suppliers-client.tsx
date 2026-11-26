@@ -2,8 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { UserPlus } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SupplierOrdersBoard } from "@/components/suppliers/supplier-orders-board";
 import {
   Card,
   CardContent,
@@ -11,10 +14,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { writeAudit, type AuditEntry } from "@/lib/audit";
-import { BUSINESS_ID } from "@/lib/config";
+import { ACTOR_ID, ACTOR_NAME, BUSINESS_ID } from "@/lib/config";
 import { formatCurrency } from "@/lib/format";
+import type { ProductOption } from "@/lib/inventory";
 import { supabase } from "@/lib/supabase/client";
 import { todayISO } from "@/lib/date";
 import {
@@ -23,6 +36,16 @@ import {
   validateEntryForm,
   validateSupplierForm,
 } from "@/lib/suppliers/calculate";
+import {
+  buildSupplierOrders,
+  calculateOutstandingCents,
+  moveSupplierOrder,
+  type NewSupplierOrderInput,
+  type SupplierOrder,
+  type SupplierOrderColumn,
+  type SupplierOrderPaymentRecord,
+  type SupplierOrderRecord,
+} from "@/lib/suppliers/orders";
 import {
   SUPPLIER_PAYMENT_METHODS,
   type EntryFormState,
@@ -35,8 +58,14 @@ import {
 
 const PARTY_COLUMNS = "id, business_id, name, phone, type, address, created_at";
 const TRANSACTION_COLUMNS =
-  "id, business_id, type, party_id, amount, category, payment_method, " +
+  "id, business_id, supplier_order_id, type, party_id, amount, category, payment_method, " +
   "description, due_date, transaction_date, attachment_url, created_at";
+const ORDER_COLUMNS =
+  "id, business_id, supplier_id, product_id, quantity, items, category, total_amount, order_date, " +
+  "due_date, status, attachment_url, received_at, created_at";
+const ORDER_PAYMENT_COLUMNS =
+  "id, business_id, order_id, supplier_id, amount, payment_method, " +
+  "payment_date, transaction_id, created_at";
 
 const selectClass =
   "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -46,6 +75,8 @@ const gridClass = "grid gap-3 sm:grid-cols-2 lg:grid-cols-4";
 interface SuppliersClientProps {
   initialParties: PartyRow[];
   initialTransactions: SupplierTransactionRow[];
+  initialOrders: SupplierOrder[];
+  initialProducts: ProductOption[];
   role: Role;
 }
 
@@ -57,6 +88,7 @@ function emptyEntryForm(): EntryFormState {
   return {
     kind: "purchase",
     partyId: "",
+    orderId: "",
     amount: "",
     category: "",
     paymentMethod: "credit",
@@ -68,12 +100,26 @@ function emptyEntryForm(): EntryFormState {
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string" && message) return message;
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" &&
+          error !== null &&
+          "message" in error &&
+          typeof error.message === "string"
+        ? error.message
+        : "";
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "23505" &&
+    message.includes("parties_business_name_phone_unique")
+  ) {
+    return "A customer or supplier with this name and phone number already exists.";
   }
-  return "Something went wrong.";
+  return message || "Something went wrong.";
 }
 
 function isSupplierPaymentMethod(value: unknown): value is SupplierPaymentMethod {
@@ -83,38 +129,123 @@ function isSupplierPaymentMethod(value: unknown): value is SupplierPaymentMethod
   );
 }
 
+interface SupplierPaymentRpcResult {
+  allocations: Array<{ order_id: string; amount: number }>;
+  legacy_amount: number;
+}
+
+function parseSupplierPaymentResult(value: unknown): SupplierPaymentRpcResult | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    !Array.isArray(record.allocations) ||
+    typeof record.legacy_amount !== "number" ||
+    !Number.isFinite(record.legacy_amount) ||
+    record.legacy_amount < 0
+  ) {
+    return null;
+  }
+
+  const allocations: SupplierPaymentRpcResult["allocations"] = [];
+  for (const candidate of record.allocations) {
+    if (typeof candidate !== "object" || candidate === null) return null;
+    const allocation = candidate as Record<string, unknown>;
+    if (
+      typeof allocation.order_id !== "string" ||
+      typeof allocation.amount !== "number" ||
+      !Number.isFinite(allocation.amount) ||
+      allocation.amount <= 0
+    ) {
+      return null;
+    }
+    allocations.push({
+      order_id: allocation.order_id,
+      amount: allocation.amount,
+    });
+  }
+
+  return { allocations, legacy_amount: record.legacy_amount };
+}
+
 export function SuppliersClient({
   initialParties,
   initialTransactions,
+  initialOrders,
+  initialProducts,
   role,
 }: SuppliersClientProps) {
   const router = useRouter();
+  const [transactions, setTransactions] = useState(initialTransactions);
+  const [orders, setOrders] = useState(initialOrders);
   const [supplierForm, setSupplierForm] = useState<SupplierFormState>(emptySupplierForm);
+  const [supplierDialogOpen, setSupplierDialogOpen] = useState(false);
   const [entryForm, setEntryForm] = useState<EntryFormState>(emptyEntryForm);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [auditWarning, setAuditWarning] = useState<string | null>(null);
   const [pendingAudit, setPendingAudit] = useState<AuditEntry | null>(null);
   const [busy, setBusy] = useState(false);
 
   const canManage = role === "owner";
-  const summaries = buildSummaries(initialParties, initialTransactions, todayISO());
+  const summaries = buildSummaries(initialParties, transactions, todayISO());
   const overdueSummaries = summaries.filter((summary) => summary.overdue);
   const totalPayable = summaries.reduce((total, summary) => total + summary.payable, 0);
 
   const selectedPayable = entryForm.partyId
-    ? payableFor(entryForm.partyId, initialTransactions, editingId ?? undefined)
+    ? payableFor(entryForm.partyId, transactions, editingId ?? undefined)
     : 0;
 
-  function clearStatus() {
-    setMessage(null);
-    setError(null);
-    setAuditWarning(null);
+  function handleSupplierDialogOpenChange(nextOpen: boolean) {
+    setSupplierDialogOpen(nextOpen);
+    if (nextOpen) {
+      setSupplierForm(emptySupplierForm());
+    }
   }
 
   function partyName(partyId: string | null): string {
     return initialParties.find((party) => party.id === partyId)?.name ?? "Unknown supplier";
+  }
+
+  async function refreshLocalSupplierData() {
+    const [transactionResult, orderResult, paymentResult] = await Promise.all([
+      supabase
+        .from("transactions")
+        .select(TRANSACTION_COLUMNS)
+        .eq("business_id", BUSINESS_ID)
+        .in("type", ["supplier_purchase", "supplier_payment"])
+        .order("transaction_date", { ascending: false })
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("supplier_orders")
+        .select(ORDER_COLUMNS)
+        .eq("business_id", BUSINESS_ID)
+        .order("order_date", { ascending: true })
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("supplier_order_payments")
+        .select(ORDER_PAYMENT_COLUMNS)
+        .eq("business_id", BUSINESS_ID)
+        .order("payment_date", { ascending: true })
+        .order("created_at", { ascending: true }),
+    ]);
+
+    const refreshError =
+      transactionResult.error ?? orderResult.error ?? paymentResult.error;
+    if (refreshError) throw refreshError;
+
+    const refreshedTransactions =
+      (transactionResult.data ?? []) as unknown as SupplierTransactionRow[];
+    const refreshedOrders = (orderResult.data ?? []) as unknown as SupplierOrderRecord[];
+    const refreshedPayments =
+      (paymentResult.data ?? []) as unknown as SupplierOrderPaymentRecord[];
+    setTransactions(refreshedTransactions);
+    setOrders(
+      buildSupplierOrders(
+        refreshedOrders,
+        refreshedPayments,
+        initialParties.map(({ id, name }) => ({ id, name })),
+      ),
+    );
   }
 
   function updateSupplierField<K extends keyof SupplierFormState>(
@@ -135,22 +266,26 @@ export function SuppliersClient({
     try {
       await writeAudit(entry);
       setPendingAudit(null);
-      setAuditWarning(null);
     } catch (auditError) {
       setPendingAudit(entry);
-      setAuditWarning(
-        `Saved, but audit logging failed: ${errorMessage(auditError)}. You can retry below.`,
+      toast.error(
+        `Saved, but audit logging failed: ${errorMessage(auditError)}.`,
+        {
+          action: {
+            label: "Retry audit",
+            onClick: () => void retryAudit(),
+          },
+        },
       );
     }
   }
 
   async function handleAddSupplier(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    clearStatus();
 
     const validationError = validateSupplierForm(supplierForm);
     if (validationError) {
-      setError(validationError);
+      toast.error(validationError);
       return;
     }
 
@@ -181,10 +316,11 @@ export function SuppliersClient({
       });
 
       setSupplierForm(emptySupplierForm());
-      setMessage("Supplier added.");
+      toast.success("Supplier added.");
+      setSupplierDialogOpen(false);
       router.refresh();
     } catch (submitError) {
-      setError(errorMessage(submitError));
+      toast.error(errorMessage(submitError));
     } finally {
       setBusy(false);
     }
@@ -192,10 +328,20 @@ export function SuppliersClient({
 
   async function handleDeleteSupplier(party: PartyRow) {
     if (!canManage) return;
-    clearStatus();
 
-    if (initialTransactions.some((tx) => tx.party_id === party.id)) {
-      setError("Cannot delete a supplier with purchases or payments recorded.");
+    const payable = payableFor(party.id, transactions);
+    if (payable > 0) {
+      toast.error(
+        `Cannot delete ${party.name} while ${formatCurrency(payable)} of supplier credit remains unpaid.`,
+      );
+      return;
+    }
+
+    if (
+      transactions.some((tx) => tx.party_id === party.id) ||
+      orders.some((order) => order.supplierId === party.id)
+    ) {
+      toast.error("Cannot delete a supplier with purchases or payments recorded.");
       return;
     }
     if (!window.confirm(`Delete ${party.name}? This cannot be undone.`)) return;
@@ -217,49 +363,225 @@ export function SuppliersClient({
         changes: { before: party, after: null },
       });
 
-      setMessage("Supplier deleted.");
+      toast.success("Supplier deleted.");
       router.refresh();
     } catch (deleteError) {
-      setError(errorMessage(deleteError));
+      toast.error(errorMessage(deleteError));
     } finally {
       setBusy(false);
     }
   }
 
+  async function handleCreateOrder(input: NewSupplierOrderInput) {
+    if (!canManage) throw new Error("Only an owner can create supplier orders.");
+    setBusy(true);
+    try {
+      const { error: rpcError } = await supabase.rpc("create_supplier_order", {
+        p_business_id: BUSINESS_ID,
+        p_supplier_id: input.supplierId,
+        p_product_id: input.productId,
+        p_quantity: Number(input.quantity),
+        p_items: input.items,
+        p_category: input.category,
+        p_total_amount: Number(input.totalAmount),
+        p_order_date: input.orderDate,
+        p_due_date: input.dueDate,
+        p_payment_type: input.paymentType,
+        p_payment_method:
+          input.paymentType === "paid_now" ? input.paymentMethod : null,
+        p_attachment_url: input.attachmentUrl.trim() || null,
+        p_actor_id: ACTOR_ID,
+        p_actor_name: ACTOR_NAME,
+      });
+
+      if (rpcError) throw rpcError;
+
+      toast.success("Supplier order created.");
+      try {
+        await refreshLocalSupplierData();
+      } catch (refreshError) {
+        toast.error(
+          `Order saved, but the board could not be refreshed: ${errorMessage(refreshError)}`,
+        );
+      }
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleOrderMove(
+    order: SupplierOrder,
+    target: SupplierOrderColumn,
+  ) {
+    if (!canManage) return;
+
+    const moveResult = moveSupplierOrder(
+      order,
+      target,
+      order.payments.length > 0,
+    );
+    if (!moveResult.ok) {
+      toast.error(moveResult.message);
+      return;
+    }
+    if (moveResult.order.status === order.status) return;
+
+    setBusy(true);
+    try {
+      const { error: rpcError } = await supabase.rpc("set_supplier_order_status", {
+        p_business_id: BUSINESS_ID,
+        p_order_id: order.id,
+        p_target_status: moveResult.order.status,
+        p_actor_id: ACTOR_ID,
+        p_actor_name: ACTOR_NAME,
+      });
+      if (rpcError) throw rpcError;
+
+      toast.success(
+        moveResult.order.status === "received"
+          ? "Order received."
+          : "Order moved back to Ordered.",
+      );
+      try {
+        await refreshLocalSupplierData();
+      } catch (refreshError) {
+        toast.error(
+          `Order updated, but the board could not be refreshed: ${errorMessage(refreshError)}`,
+        );
+      }
+      router.refresh();
+    } catch (moveError) {
+      toast.error(errorMessage(moveError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startOrderPayment(order: SupplierOrder) {
+    setEditingId(null);
+    setEntryForm({
+      ...emptyEntryForm(),
+      kind: "payment",
+      partyId: order.supplierId,
+      orderId: order.id,
+      category: "Supplier payment",
+    });
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById("supplier-entry-form")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
   async function handleEntrySubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    clearStatus();
 
     const validationError = validateEntryForm(
       entryForm,
       initialParties,
-      initialTransactions,
+      transactions,
       editingId,
     );
     if (validationError) {
-      setError(validationError);
+      toast.error(validationError);
       return;
+    }
+
+    if (entryForm.kind === "payment" && entryForm.orderId) {
+      const order = orders.find((candidate) => candidate.id === entryForm.orderId);
+      if (!order || order.supplierId !== entryForm.partyId) {
+        toast.error("Choose an outstanding order for this supplier.");
+        return;
+      }
+      const orderOutstanding = calculateOutstandingCents(
+        order.totalCents,
+        order.paidCents,
+      );
+      if (Math.round(Number(entryForm.amount) * 100) > orderOutstanding) {
+        toast.error(
+          `Payment exceeds this order's outstanding amount (${formatCurrency(orderOutstanding / 100)}).`,
+        );
+        return;
+      }
     }
 
     setBusy(true);
     try {
       const isPurchase = entryForm.kind === "purchase";
+      if (!isPurchase) {
+        const { data, error: rpcError } = await supabase.rpc(
+          "record_supplier_order_payment",
+          {
+            p_business_id: BUSINESS_ID,
+            p_supplier_id: entryForm.partyId,
+            p_amount: Number(entryForm.amount),
+            p_payment_method: entryForm.paymentMethod,
+            p_payment_date: entryForm.transactionDate,
+            p_order_id: entryForm.orderId || null,
+            p_actor_id: ACTOR_ID,
+            p_actor_name: ACTOR_NAME,
+          },
+        );
+
+        if (rpcError) throw rpcError;
+
+        const result = parseSupplierPaymentResult(data);
+        const affected: string[] = [];
+        for (const allocation of result?.allocations ?? []) {
+          const order = orders.find(
+            (candidate) => candidate.id === allocation.order_id,
+          );
+          affected.push(
+            `${order?.supplierName ?? "Order"} ${allocation.order_id.slice(0, 8)} (${formatCurrency(allocation.amount)})`,
+          );
+        }
+        const paymentMessage = result
+          ? affected.length > 0 || result.legacy_amount > 0
+            ? `Payment recorded. Applied to ${[
+                ...affected,
+                ...(result.legacy_amount > 0
+                  ? [`existing payable (${formatCurrency(result.legacy_amount)})`]
+                  : []),
+              ].join(", ")}.`
+            : "Payment recorded."
+          : null;
+        if (paymentMessage) {
+          toast.success(paymentMessage);
+        } else {
+          toast.error(
+            "Payment was saved, but allocation details could not be verified. Check the supplier ledger.",
+          );
+        }
+        setEditingId(null);
+        setEntryForm(emptyEntryForm());
+        try {
+          await refreshLocalSupplierData();
+        } catch (refreshError) {
+          toast.error(
+            `Payment saved, but supplier totals could not be refreshed: ${errorMessage(refreshError)}`,
+          );
+        }
+        router.refresh();
+        return;
+      }
+
       const payload = {
         business_id: BUSINESS_ID,
-        type: isPurchase ? "supplier_purchase" : "supplier_payment",
+        type: "supplier_purchase",
         party_id: entryForm.partyId,
         amount: Number(entryForm.amount),
         category: entryForm.category.trim(),
-        payment_method: isPurchase ? "credit" : entryForm.paymentMethod,
+        payment_method: "credit",
         transaction_date: entryForm.transactionDate,
-        due_date: isPurchase ? entryForm.dueDate : null,
+        due_date: entryForm.dueDate,
         description: entryForm.description.trim() || null,
         attachment_url: entryForm.attachmentUrl.trim() || null,
       };
 
       if (editingId) {
         const before =
-          initialTransactions.find((tx) => tx.id === editingId) ?? null;
+          transactions.find((tx) => tx.id === editingId) ?? null;
         const { data, error: dbError } = await supabase
           .from("transactions")
           .update(payload)
@@ -276,7 +598,7 @@ export function SuppliersClient({
           action: "update",
           changes: { before, after: data as unknown as SupplierTransactionRow },
         });
-        setMessage("Supplier transaction updated.");
+        toast.success("Supplier transaction updated.");
       } else {
         const { data, error: dbError } = await supabase
           .from("transactions")
@@ -293,14 +615,21 @@ export function SuppliersClient({
           action: "insert",
           changes: { before: null, after: created },
         });
-        setMessage(isPurchase ? "Purchase recorded." : "Payment recorded.");
+        toast.success("Purchase recorded.");
       }
 
       setEditingId(null);
       setEntryForm(emptyEntryForm());
+      try {
+        await refreshLocalSupplierData();
+      } catch (refreshError) {
+        toast.error(
+          `Transaction saved, but supplier totals could not be refreshed: ${errorMessage(refreshError)}`,
+        );
+      }
       router.refresh();
     } catch (submitError) {
-      setError(errorMessage(submitError));
+      toast.error(errorMessage(submitError));
     } finally {
       setBusy(false);
     }
@@ -308,11 +637,15 @@ export function SuppliersClient({
 
   function startEdit(tx: SupplierTransactionRow) {
     if (!canManage) return;
-    clearStatus();
+    if (tx.supplier_order_id) {
+      toast.error("Order-linked transactions are managed from the Orders Board.");
+      return;
+    }
     setEditingId(tx.id);
     setEntryForm({
       kind: tx.type === "supplier_purchase" ? "purchase" : "payment",
       partyId: tx.party_id ?? "",
+      orderId: "",
       amount: String(tx.amount),
       category: tx.category,
       paymentMethod:
@@ -330,7 +663,10 @@ export function SuppliersClient({
 
   async function handleDeleteEntry(tx: SupplierTransactionRow) {
     if (!canManage) return;
-    clearStatus();
+    if (tx.supplier_order_id) {
+      toast.error("Order-linked transactions are managed from the Orders Board.");
+      return;
+    }
     if (!window.confirm("Delete this supplier transaction? This cannot be undone.")) {
       return;
     }
@@ -356,10 +692,17 @@ export function SuppliersClient({
         setEditingId(null);
         setEntryForm(emptyEntryForm());
       }
-      setMessage("Supplier transaction deleted.");
+      toast.success("Supplier transaction deleted.");
+      try {
+        await refreshLocalSupplierData();
+      } catch (refreshError) {
+        toast.error(
+          `Transaction deleted, but supplier totals could not be refreshed: ${errorMessage(refreshError)}`,
+        );
+      }
       router.refresh();
     } catch (deleteError) {
-      setError(errorMessage(deleteError));
+      toast.error(errorMessage(deleteError));
     } finally {
       setBusy(false);
     }
@@ -371,10 +714,14 @@ export function SuppliersClient({
     try {
       await writeAudit(pendingAudit);
       setPendingAudit(null);
-      setAuditWarning(null);
-      setMessage("Audit entry recorded.");
+      toast.success("Audit entry recorded.");
     } catch (auditError) {
-      setAuditWarning(`Audit retry failed: ${errorMessage(auditError)}`);
+      toast.error(`Audit retry failed: ${errorMessage(auditError)}`, {
+        action: {
+          label: "Retry audit",
+          onClick: () => void retryAudit(),
+        },
+      });
     } finally {
       setBusy(false);
     }
@@ -382,82 +729,119 @@ export function SuppliersClient({
 
   return (
     <div className="space-y-6">
-      {message && (
-        <p role="status" className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
-          {message}
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      {auditWarning && (
-        <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-          <p>{auditWarning}</p>
-          <Button type="button" size="sm" variant="link" onClick={retryAudit} disabled={busy}>
-            Retry audit entry
-          </Button>
-        </div>
-      )}
-
       <Card>
-        <CardHeader>
-          <CardTitle>Suppliers and payables</CardTitle>
-          <CardDescription>
-            Total payable {formatCurrency(totalPayable)} · {overdueSummaries.length} overdue
-          </CardDescription>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle>Suppliers and payables</CardTitle>
+            <CardDescription>
+              Total payable {formatCurrency(totalPayable)} · {overdueSummaries.length} overdue
+            </CardDescription>
+          </div>
+          {canManage ? (
+            <Dialog
+              open={supplierDialogOpen}
+              onOpenChange={handleSupplierDialogOpenChange}
+            >
+              <DialogTrigger render={<Button type="button" disabled={busy} />}>
+                <UserPlus aria-hidden="true" />
+                Add supplier
+              </DialogTrigger>
+              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Add supplier</DialogTitle>
+                  <DialogDescription>
+                    Add a supplier to track purchases and outstanding payables.
+                    Use Both if this is also a customer.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleAddSupplier} className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className={labelClass} htmlFor="supplier-name">
+                        Name
+                      </label>
+                      <Input
+                        id="supplier-name"
+                        value={supplierForm.name}
+                        onChange={(event) =>
+                          updateSupplierField("name", event.target.value)
+                        }
+                        placeholder="Supplier name"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className={labelClass} htmlFor="supplier-phone">
+                        Phone (optional)
+                      </label>
+                      <Input
+                        id="supplier-phone"
+                        value={supplierForm.phone}
+                        onChange={(event) =>
+                          updateSupplierField("phone", event.target.value)
+                        }
+                        placeholder="Phone"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className={labelClass} htmlFor="supplier-address">
+                        Address (optional)
+                      </label>
+                      <Input
+                        id="supplier-address"
+                        value={supplierForm.address}
+                        onChange={(event) =>
+                          updateSupplierField("address", event.target.value)
+                        }
+                        placeholder="Address"
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className={labelClass} htmlFor="supplier-type">
+                        Type
+                      </label>
+                      <select
+                        id="supplier-type"
+                        className={selectClass}
+                        value={supplierForm.type}
+                        onChange={(event) =>
+                          updateSupplierField(
+                            "type",
+                            event.target.value === "both" ? "both" : "supplier",
+                          )
+                        }
+                      >
+                        <option value="supplier">Supplier</option>
+                        <option value="both">
+                          Both (customer and supplier)
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleSupplierDialogOpenChange(false)}
+                      disabled={busy}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={busy}>
+                      <UserPlus aria-hidden="true" />
+                      {busy ? "Adding supplier…" : "Add supplier"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-6">
-          <form onSubmit={handleAddSupplier} className="space-y-3">
-            <div className={gridClass}>
-              <div className="space-y-1">
-                <label className={labelClass} htmlFor="supplier-name">Name</label>
-                <Input
-                  id="supplier-name"
-                  value={supplierForm.name}
-                  onChange={(event) => updateSupplierField("name", event.target.value)}
-                  placeholder="Supplier name"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className={labelClass} htmlFor="supplier-phone">Phone (optional)</label>
-                <Input
-                  id="supplier-phone"
-                  value={supplierForm.phone}
-                  onChange={(event) => updateSupplierField("phone", event.target.value)}
-                  placeholder="Phone"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className={labelClass} htmlFor="supplier-address">Address (optional)</label>
-                <Input
-                  id="supplier-address"
-                  value={supplierForm.address}
-                  onChange={(event) => updateSupplierField("address", event.target.value)}
-                  placeholder="Address"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className={labelClass} htmlFor="supplier-type">Type</label>
-                <select
-                  id="supplier-type"
-                  className={selectClass}
-                  value={supplierForm.type}
-                  onChange={(event) =>
-                    updateSupplierField("type", event.target.value === "both" ? "both" : "supplier")
-                  }
-                >
-                  <option value="supplier">Supplier</option>
-                  <option value="both">Both (customer and supplier)</option>
-                </select>
-              </div>
-            </div>
-            <Button type="submit" disabled={busy}>Add supplier</Button>
-          </form>
-
           {summaries.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No suppliers yet. Add one above to get started.</p>
+            <p className="text-sm text-muted-foreground">
+              No suppliers yet. Use Add supplier to get started.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -507,7 +891,21 @@ export function SuppliersClient({
         </CardContent>
       </Card>
 
+      <SupplierOrdersBoard
+        orders={orders}
+        products={initialProducts}
+        suppliers={initialParties.filter(
+          (party) => party.type === "supplier" || party.type === "both",
+        )}
+        role={role}
+        busy={busy}
+        onCreate={handleCreateOrder}
+        onMove={handleOrderMove}
+        onRecordPayment={startOrderPayment}
+      />
+
       <Card>
+        <div id="supplier-entry-form" />
         <CardHeader>
           <CardTitle>{editingId ? "Edit supplier transaction" : "Record purchase or payment"}</CardTitle>
           <CardDescription>
@@ -529,8 +927,13 @@ export function SuppliersClient({
                     setEntryForm((previous) => ({
                       ...previous,
                       kind,
+                      orderId: "",
                       paymentMethod: kind === "purchase" ? "credit" : "cash",
                       dueDate: kind === "purchase" ? previous.dueDate : "",
+                      category:
+                        kind === "payment" && !previous.category
+                          ? "Supplier payment"
+                          : previous.category,
                     }));
                   }}
                 >
@@ -545,7 +948,13 @@ export function SuppliersClient({
                   className={selectClass}
                   value={entryForm.partyId}
                   disabled={editingId !== null}
-                  onChange={(event) => updateEntryField("partyId", event.target.value)}
+                  onChange={(event) => {
+                    setEntryForm((previous) => ({
+                      ...previous,
+                      partyId: event.target.value,
+                      orderId: "",
+                    }));
+                  }}
                 >
                   <option value="">Choose a supplier</option>
                   {summaries.map((summary) => (
@@ -555,6 +964,46 @@ export function SuppliersClient({
                   ))}
                 </select>
               </div>
+              {entryForm.kind === "payment" ? (
+                <div className="space-y-1">
+                  <label className={labelClass} htmlFor="entry-order">
+                    Supplier order (optional)
+                  </label>
+                  <select
+                    id="entry-order"
+                    className={selectClass}
+                    value={entryForm.orderId}
+                    onChange={(event) =>
+                      updateEntryField("orderId", event.target.value)
+                    }
+                    disabled={!entryForm.partyId || editingId !== null}
+                  >
+                    <option value="">Apply oldest outstanding first (FIFO)</option>
+                    {orders
+                      .filter(
+                        (order) =>
+                          order.supplierId === entryForm.partyId &&
+                          order.status === "received" &&
+                          calculateOutstandingCents(
+                            order.totalCents,
+                            order.paidCents,
+                          ) > 0,
+                      )
+                      .map((order) => (
+                        <option key={order.id} value={order.id}>
+                          {order.id.slice(0, 8)} ·{" "}
+                          {formatCurrency(
+                            calculateOutstandingCents(
+                              order.totalCents,
+                              order.paidCents,
+                            ) / 100,
+                          )}{" "}
+                          outstanding
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              ) : null}
               <div className="space-y-1">
                 <label className={labelClass} htmlFor="entry-amount">Amount</label>
                 <Input
@@ -652,7 +1101,6 @@ export function SuppliersClient({
                   onClick={() => {
                     setEditingId(null);
                     setEntryForm(emptyEntryForm());
-                    clearStatus();
                   }}
                 >
                   Cancel edit
@@ -671,7 +1119,7 @@ export function SuppliersClient({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {initialTransactions.length === 0 ? (
+          {transactions.length === 0 ? (
             <p className="text-sm text-muted-foreground">No supplier transactions recorded yet.</p>
           ) : (
             <div className="overflow-x-auto">
@@ -689,7 +1137,7 @@ export function SuppliersClient({
                   </tr>
                 </thead>
                 <tbody>
-                  {initialTransactions.map((tx) => (
+                  {transactions.map((tx) => (
                     <tr key={tx.id} className="border-t">
                       <td className="px-2 py-2">{tx.transaction_date}</td>
                       <td className="px-2 py-2">{partyName(tx.party_id)}</td>
@@ -711,16 +1159,16 @@ export function SuppliersClient({
                             size="sm"
                             variant="ghost"
                             onClick={() => startEdit(tx)}
-                            disabled={busy || !canManage}
+                            disabled={busy || !canManage || Boolean(tx.supplier_order_id)}
                           >
-                            Edit
+                            {tx.supplier_order_id ? "Order-managed" : "Edit"}
                           </Button>
                           <Button
                             type="button"
                             size="sm"
                             variant="ghost"
                             onClick={() => handleDeleteEntry(tx)}
-                            disabled={busy || !canManage}
+                            disabled={busy || !canManage || Boolean(tx.supplier_order_id)}
                           >
                             Delete
                           </Button>

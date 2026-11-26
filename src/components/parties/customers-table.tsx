@@ -2,7 +2,6 @@ import Link from "next/link";
 import { UsersIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -12,18 +11,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { CustomerSummary } from "@/lib/credit/types";
-import { cn } from "@/lib/utils";
+import { CustomerListActions } from "@/components/parties/customer-list-actions";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 interface CustomersTableProps {
   accounts: CustomerSummary[];
+  today: string;
 }
 
 function typeLabel(type: CustomerSummary["party"]["type"]): string {
   return type === "both" ? "Customer & supplier" : "Customer";
 }
 
-export function CustomersTable({ accounts }: CustomersTableProps) {
+export function CustomersTable({ accounts, today }: CustomersTableProps) {
   if (accounts.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-4 py-12 text-center">
@@ -47,7 +47,7 @@ export function CustomersTable({ accounts }: CustomersTableProps) {
           <TableHead className="text-right">Balance</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Due</TableHead>
-          <TableHead className="text-right">Action</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -100,14 +100,7 @@ export function CustomersTable({ accounts }: CustomersTableProps) {
                   : formatDate(account.nextDueDate)}
               </TableCell>
               <TableCell className="text-right">
-                <Link
-                  href={`/parties/${party.id}`}
-                  className={cn(
-                    buttonVariants({ variant: "outline", size: "sm" }),
-                  )}
-                >
-                  View
-                </Link>
+                <CustomerListActions account={account} today={today} />
               </TableCell>
             </TableRow>
           );

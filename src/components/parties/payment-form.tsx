@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Wallet } from "lucide-react";
+import { toast } from "sonner";
 
 import { recordPaymentAction } from "@/app/parties/actions";
 import { FieldError } from "@/components/parties/field-error";
@@ -25,9 +26,15 @@ interface PaymentFormProps {
   partyId: string;
   today: string;
   balance: number;
+  idPrefix?: string;
 }
 
-export function PaymentForm({ partyId, today, balance }: PaymentFormProps) {
+export function PaymentForm({
+  partyId,
+  today,
+  balance,
+  idPrefix = "payment",
+}: PaymentFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
   const [state, formAction, pending] = useActionState(
@@ -35,7 +42,6 @@ export function PaymentForm({ partyId, today, balance }: PaymentFormProps) {
     initialActionState,
   );
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
-  const [clientMessage, setClientMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (state.status === "success") {
@@ -62,21 +68,19 @@ export function PaymentForm({ partyId, today, balance }: PaymentFormProps) {
     if (Object.keys(nextErrors).length > 0) {
       event.preventDefault();
       setClientErrors(nextErrors);
-      setClientMessage(null);
       return;
     }
 
     if (amount !== null && isOverpayment(amount, balance)) {
       event.preventDefault();
       setClientErrors({});
-      setClientMessage(
+      toast.error(
         `Payment of ${formatCurrency(amount)} exceeds the outstanding balance of ${formatCurrency(balance)}.`,
       );
       return;
     }
 
     setClientErrors({});
-    setClientMessage(null);
   }
 
   function fillFullBalance() {
@@ -93,14 +97,7 @@ export function PaymentForm({ partyId, today, balance }: PaymentFormProps) {
       noValidate
     >
       <input type="hidden" name="party_id" value={partyId} />
-      {clientMessage ? (
-        <p
-          role="alert"
-          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          {clientMessage}
-        </p>
-      ) : Object.keys(clientErrors).length === 0 ? (
+      {Object.keys(clientErrors).length === 0 ? (
         <FormMessage state={state} />
       ) : null}
 
@@ -110,13 +107,13 @@ export function PaymentForm({ partyId, today, balance }: PaymentFormProps) {
       </div>
 
       <div>
-        <Label htmlFor="payment-amount" className={labelClass}>
+        <Label htmlFor={`${idPrefix}-amount`} className={labelClass}>
           Amount <span className="text-destructive">*</span>
         </Label>
         <div className="flex gap-2">
           <Input
             ref={amountRef}
-            id="payment-amount"
+            id={`${idPrefix}-amount`}
             name="amount"
             type="number"
             inputMode="decimal"
@@ -127,7 +124,7 @@ export function PaymentForm({ partyId, today, balance }: PaymentFormProps) {
             required
             aria-invalid={Boolean(errors.amount)}
             aria-describedby={
-              errors.amount ? "payment-amount-error" : undefined
+              errors.amount ? `${idPrefix}-amount-error` : undefined
             }
           />
           <Button
@@ -140,39 +137,39 @@ export function PaymentForm({ partyId, today, balance }: PaymentFormProps) {
             Pay full balance
           </Button>
         </div>
-        <FieldError id="payment-amount-error" message={errors.amount} />
+        <FieldError id={`${idPrefix}-amount-error`} message={errors.amount} />
       </div>
 
       <div>
-        <Label htmlFor="payment-category" className={labelClass}>
+        <Label htmlFor={`${idPrefix}-category`} className={labelClass}>
           Category <span className="text-destructive">*</span>
         </Label>
         <Input
-          id="payment-category"
+          id={`${idPrefix}-category`}
           name="category"
           defaultValue="Customer payment"
           required
           aria-invalid={Boolean(errors.category)}
           aria-describedby={
-            errors.category ? "payment-category-error" : undefined
+            errors.category ? `${idPrefix}-category-error` : undefined
           }
         />
-        <FieldError id="payment-category-error" message={errors.category} />
+        <FieldError id={`${idPrefix}-category-error`} message={errors.category} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <Label htmlFor="payment-method" className={labelClass}>
+          <Label htmlFor={`${idPrefix}-method`} className={labelClass}>
             Payment method <span className="text-destructive">*</span>
           </Label>
           <select
-            id="payment-method"
+            id={`${idPrefix}-method`}
             name="payment_method"
             defaultValue="cash"
             className={controlClass}
             aria-invalid={Boolean(errors.payment_method)}
             aria-describedby={
-              errors.payment_method ? "payment-method-error" : undefined
+              errors.payment_method ? `${idPrefix}-method-error` : undefined
             }
           >
             <option value="cash">Cash</option>
@@ -181,17 +178,17 @@ export function PaymentForm({ partyId, today, balance }: PaymentFormProps) {
             <option value="online">Online</option>
           </select>
           <FieldError
-            id="payment-method-error"
+            id={`${idPrefix}-method-error`}
             message={errors.payment_method}
           />
         </div>
 
         <div>
-          <Label htmlFor="payment-date" className={labelClass}>
+          <Label htmlFor={`${idPrefix}-date`} className={labelClass}>
             Transaction date <span className="text-destructive">*</span>
           </Label>
           <Input
-            id="payment-date"
+            id={`${idPrefix}-date`}
             name="transaction_date"
             type="date"
             defaultValue={today}
@@ -199,10 +196,10 @@ export function PaymentForm({ partyId, today, balance }: PaymentFormProps) {
             required
             aria-invalid={Boolean(errors.transaction_date)}
             aria-describedby={
-              errors.transaction_date ? "payment-date-error" : undefined
+              errors.transaction_date ? `${idPrefix}-date-error` : undefined
             }
           />
-          <FieldError id="payment-date-error" message={errors.transaction_date} />
+          <FieldError id={`${idPrefix}-date-error`} message={errors.transaction_date} />
         </div>
       </div>
 

@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { AlertTriangle, Package, Users, Truck } from "lucide-react";
 import { formatNPR, formatDate, relativeDue } from "@/lib/format";
 import type { LowStockProduct, PartyBalance } from "@/lib/dashboard";
@@ -20,6 +21,7 @@ type AlertsSheetProps = {
   overdueSuppliers: PartyBalance[];
   customerBalances?: PartyBalance[];
   supplierBalances?: PartyBalance[];
+  onReorder?: (product: LowStockProduct) => void;
 };
 
 export function AlertsSheet({
@@ -30,14 +32,15 @@ export function AlertsSheet({
   overdueSuppliers,
   customerBalances = [],
   supplierBalances = [],
+  onReorder,
 }: AlertsSheetProps) {
   const totalAlerts =
     lowStockProducts.length + overdueCustomers.length + overdueSuppliers.length;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-lg overflow-y-auto bg-[#F8F6F2]">
-        <SheetHeader className="pb-4">
+      <SheetContent className="w-full overflow-y-auto bg-[#F8F6F2] px-5 py-5 sm:max-w-lg sm:px-6">
+        <SheetHeader className="p-0 pb-4">
           <SheetTitle className="flex items-center gap-2 text-lg font-semibold text-stone-900">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
             Alert Centre
@@ -79,12 +82,25 @@ export function AlertsSheet({
                         Stock: {p.current_stock} / Min: {p.min_stock}
                       </p>
                     </div>
-                    <Badge
-                      variant="outline"
-                      className="text-orange-600 border-orange-300 bg-orange-50"
-                    >
-                      {p.current_stock === 0 ? "Out of stock" : "Low"}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className="text-orange-600 border-orange-300 bg-orange-50"
+                      >
+                        {p.current_stock === 0 ? "Out of stock" : "Low"}
+                      </Badge>
+                      {onReorder ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onReorder(p)}
+                          className="h-8 rounded-lg"
+                        >
+                          Reorder
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>

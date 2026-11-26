@@ -11,7 +11,7 @@ import { parseTransactionFilters } from "@/lib/transactions/filters";
 
 export const metadata: Metadata = {
   title: "Transactions | BizTrack",
-  description: "Record and review income and expenses.",
+  description: "Record and review income, expenses, and related payments.",
 };
 
 async function TransactionsLoader({
@@ -40,7 +40,7 @@ export default function Page({ searchParams }: PageProps<"/transactions">) {
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Record everyday income and expenses, then review and filter them.
+          Record everyday income and expenses. Totals also include customer receipts and paid supplier costs from their ledgers.
         </p>
       </header>
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useCallback, useState, type ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -11,15 +12,18 @@ import {
   Menu,
   Package,
   Search,
+  ShoppingCart,
   Truck,
   Users,
   X,
   ChevronsUpDown,
 } from "lucide-react";
+import { NavbarActionContext } from "@/components/layout/navbar-action-context";
 
 const NAV_ITEMS = [
   { id: "overview", label: "Overview", href: "/", icon: LayoutGrid },
   { id: "transactions", label: "Money Flow", href: "/transactions", icon: ArrowLeftRight },
+  { id: "sales", label: "Product Sales", href: "/sales", icon: ShoppingCart },
   { id: "parties", label: "Customers", href: "/parties", icon: Users },
   { id: "suppliers", label: "Suppliers", href: "/suppliers", icon: Truck },
   { id: "inventory", label: "Stockroom", href: "/inventory", icon: Package },
@@ -72,28 +76,41 @@ function ActiveNavigation({ onNavigate }: { onNavigate: () => void }) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [navbarAction, setNavbarAction] = useState<{
+    id: string;
+    element: ReactNode;
+  } | null>(null);
+  const registerNavbarAction = useCallback(
+    (id: string, element: ReactNode | null) => {
+      setNavbarAction((current) => {
+        if (element === null) return current?.id === id ? null : current;
+        return { id, element };
+      });
+    },
+    [],
+  );
 
   const sidebarContent = (
     <div className="flex h-full flex-col justify-between bg-[#0C3B37] px-3.5 py-5 text-white">
       <div>
         <div className="border-b border-white/10 px-2 pb-5 text-center">
-          <h1 className="text-lg font-bold tracking-tight text-white">
-            BizTrack
-          </h1>
-          <p className="mt-0.5 text-[11px] text-emerald-200/75">
-            व्यापार खाता • Nepal Edition
-          </p>
-        </div>
-
-        <div className="mt-4 px-1">
-          <Link
-            href="/transactions"
-            onClick={() => setMobileNavOpen(false)}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#F4C44E] text-sm font-semibold text-[#0C3B37] shadow-sm transition-colors hover:bg-[#e5b53f]"
-          >
-            <span aria-hidden="true" className="text-lg leading-none">+</span>
-            Quick Add
-          </Link>
+          <div className="flex items-center justify-center gap-2.5">
+            <Image
+              src="/icon.svg"
+              width={38}
+              height={38}
+              alt=""
+              aria-hidden="true"
+            />
+            <div className="text-left">
+              <h1 className="text-lg font-bold tracking-tight text-white">
+                BizTrack
+              </h1>
+              <p className="mt-0.5 text-[11px] text-emerald-200/75">
+                व्यापार खाता • Nepal Edition
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="mt-6">
@@ -138,77 +155,73 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="flex min-h-screen bg-[#F8F6F2] text-stone-900">
-      <aside className="sticky top-0 hidden h-screen w-56 shrink-0 lg:block">
-        {sidebarContent}
-      </aside>
+    <NavbarActionContext.Provider value={registerNavbarAction}>
+      <div className="flex min-h-screen bg-[#F8F6F2] text-stone-900">
+        <aside className="sticky top-0 hidden h-screen w-56 shrink-0 lg:block">
+          {sidebarContent}
+        </aside>
 
-      {mobileNavOpen && (
-        <div className="fixed inset-0 z-50 flex lg:hidden">
-          <button
-            type="button"
-            aria-label="Close navigation"
-            className="fixed inset-0 bg-black/40"
-            onClick={() => setMobileNavOpen(false)}
-          />
-          <aside className="relative z-10 h-full w-60">
+        {mobileNavOpen && (
+          <div className="fixed inset-0 z-50 flex lg:hidden">
             <button
               type="button"
-              onClick={() => setMobileNavOpen(false)}
               aria-label="Close navigation"
-              className="absolute right-3 top-4 p-1 text-white/80 hover:text-white"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            {sidebarContent}
-          </aside>
-        </div>
-      )}
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 border-b border-stone-200/80 bg-white/95 px-4 py-3 backdrop-blur lg:px-7">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
-            <div className="flex max-w-md flex-1 items-center gap-3">
+              className="fixed inset-0 bg-black/40"
+              onClick={() => setMobileNavOpen(false)}
+            />
+            <aside className="relative z-10 h-full w-60">
               <button
                 type="button"
-                onClick={() => setMobileNavOpen(true)}
-                aria-label="Open navigation"
-                className="rounded-lg border border-stone-200 p-2 text-stone-700 hover:bg-stone-100 lg:hidden"
+                onClick={() => setMobileNavOpen(false)}
+                aria-label="Close navigation"
+                className="absolute right-3 top-4 p-1 text-white/80 hover:text-white"
               >
-                <Menu className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
-                <input
-                  type="search"
-                  aria-label="Search"
-                  placeholder="Search bills, items, udharo party..."
-                  className="h-9 w-full rounded-xl border border-stone-200/80 bg-[#F8F6F2] pl-9 pr-3 text-xs placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#0C3B37]/20 sm:text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              <div className="hidden items-center gap-1.5 rounded-xl border border-stone-200/80 bg-[#F8F6F2] px-3 py-1.5 text-xs text-stone-600 md:flex">
-                <Calendar className="h-3.5 w-3.5 text-[#0C3B37]" />
-                <span>Today</span>
-              </div>
-              <Link
-                href="/transactions"
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[#0C3B37] px-3.5 text-xs font-medium text-white transition-colors hover:bg-[#092e2b]"
-              >
-                <span aria-hidden="true" className="text-base leading-none">+</span>
-                Add
-              </Link>
-              <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-[#0C3B37] text-xs font-semibold text-white sm:flex">
-                RJ
-              </div>
-            </div>
+              {sidebarContent}
+            </aside>
           </div>
-        </header>
+        )}
 
-        <div className="flex-1">{children}</div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-20 border-b border-stone-200/80 bg-white/95 px-4 py-3 backdrop-blur lg:px-7">
+            <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+              <div className="flex max-w-md flex-1 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMobileNavOpen(true)}
+                  aria-label="Open navigation"
+                  className="rounded-lg border border-stone-200 p-2 text-stone-700 hover:bg-stone-100 lg:hidden"
+                >
+                  <Menu className="h-4 w-4" />
+                </button>
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+                  <input
+                    type="search"
+                    aria-label="Search"
+                    placeholder="Search bills, items, udharo party..."
+                    className="h-9 w-full rounded-xl border border-stone-200/80 bg-[#F8F6F2] pl-9 pr-3 text-xs placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#0C3B37]/20 sm:text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                {navbarAction?.element}
+                <div className="hidden items-center gap-1.5 rounded-xl border border-stone-200/80 bg-[#F8F6F2] px-3 py-1.5 text-xs text-stone-600 md:flex">
+                  <Calendar className="h-3.5 w-3.5 text-[#0C3B37]" />
+                  <span>Today</span>
+                </div>
+                <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-[#0C3B37] text-xs font-semibold text-white sm:flex">
+                  RJ
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <div className="flex-1">{children}</div>
+        </div>
       </div>
-    </div>
+    </NavbarActionContext.Provider>
   );
 }

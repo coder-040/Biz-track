@@ -4,6 +4,7 @@ import {
   calculateNewStock,
   isLowStock,
   movementDelta,
+  suggestedReorderQuantity,
 } from "./inventory"
 
 describe("inventory business logic", () => {
@@ -61,6 +62,21 @@ describe("inventory business logic", () => {
     it("returns 0 if current_stock is 0 or negative", () => {
       expect(calculateInventoryValue(0, 10)).toBe(0)
       expect(calculateInventoryValue(-5, 10)).toBe(0)
+    })
+  })
+
+  describe("suggestedReorderQuantity", () => {
+    it("returns the quantity needed to reach minimum stock", () => {
+      expect(suggestedReorderQuantity(2, 10)).toBe(8)
+    })
+
+    it("returns at least one unit when stock is at or below zero", () => {
+      expect(suggestedReorderQuantity(0, 0)).toBe(1)
+      expect(suggestedReorderQuantity(-2, 5)).toBe(7)
+    })
+
+    it("returns at least one unit when stock is already above minimum", () => {
+      expect(suggestedReorderQuantity(12, 10)).toBe(1)
     })
   })
 })

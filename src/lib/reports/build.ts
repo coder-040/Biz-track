@@ -2,6 +2,7 @@ import { buildCustomerAccount } from "@/lib/credit/calculations";
 import type { CreditTransaction, Party } from "@/lib/credit/types";
 import { BUSINESS_ID } from "@/lib/config";
 import { movementDelta } from "@/lib/inventory";
+import { cashFlowType } from "@/lib/transactions/accounting";
 import type {
   ReportMovement,
   ReportParty,
@@ -147,12 +148,18 @@ function periodRows(
   const buckets = new Map<string, { income: number; expense: number }>();
   for (const tx of transactions) {
     if (!inDateRange(tx.transaction_date, from, to)) continue;
-    if (tx.type !== "income" && tx.type !== "expense") continue;
+
+    const flowType = cashFlowType(tx.type, tx.payment_method);
+    if (!flowType) continue;
 
     const date = dateOnly(tx.transaction_date);
     const key = monthly ? date.slice(0, 7) : date;
     const bucket = buckets.get(key) ?? { income: 0, expense: 0 };
-    bucket[tx.type] += amount(tx.amount);
+    if (flowType === "income") {
+      bucket.income += amount(tx.amount);
+    } else {
+      bucket.expense += amount(tx.amount);
+    }
     buckets.set(key, bucket);
   }
 
@@ -173,7 +180,8 @@ function periodRows(
 
   return {
     title: monthly ? "Monthly income & expense" : "Daily income & expense",
-    description: "Totals are grouped by transaction date and include the selected dates.",
+    description:
+      "Cash income and expenses are grouped by transaction date. Credit sales count when paid; unpaid supplier purchases are excluded.",
     columns: [
       { key: "period", label: monthly ? "Month" : "Date", format: "date" },
       { key: "income", label: "Income", format: "currency" },

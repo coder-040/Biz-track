@@ -2,7 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export function PartiesSkeleton() {
   return (
-    <div className="space-y-8" aria-label="Loading customers">
+    <div className="space-y-6" aria-busy="true" aria-label="Loading customers">
       <div className="grid gap-4 sm:grid-cols-3">
         {[0, 1, 2].map((index) => (
           <div
@@ -16,19 +16,27 @@ export function PartiesSkeleton() {
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-        <div className="space-y-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+      <div className="space-y-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-4 w-64" />
+        {[0, 1].map((index) => (
+          <Skeleton key={index} className="h-12 w-full" />
+        ))}
+      </div>
+
+      <div className="space-y-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+        <div className="space-y-2">
           <Skeleton className="h-5 w-40" />
-          {[0, 1, 2, 3].map((index) => (
-            <Skeleton key={index} className="h-12 w-full" />
+          <Skeleton className="h-4 w-72" />
+        </div>
+        <div className="grid grid-cols-6 gap-3 border-b pb-2">
+          {[0, 1, 2, 3, 4, 5].map((index) => (
+            <Skeleton key={index} className="h-4 w-full" />
           ))}
         </div>
-        <div className="space-y-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
-          <Skeleton className="h-5 w-32" />
-          {[0, 1, 2, 3].map((index) => (
-            <Skeleton key={index} className="h-9 w-full" />
-          ))}
-        </div>
+        {[0, 1, 2, 3].map((index) => (
+          <Skeleton key={index} className="h-14 w-full" />
+        ))}
       </div>
     </div>
   );

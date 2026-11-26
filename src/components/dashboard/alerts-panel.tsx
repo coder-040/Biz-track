@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertsSheet } from "@/components/dashboard/alerts-sheet";
+import { RestockProductDialog } from "@/components/inventory/restock-product-dialog";
 import {
   Bell,
   Package,
@@ -17,6 +18,7 @@ import type {
   PartyBalance,
   Transaction,
 } from "@/lib/dashboard";
+import type { SupplierOption } from "@/lib/inventory";
 
 type AlertsPanelProps = {
   lowStockProducts: LowStockProduct[];
@@ -27,6 +29,8 @@ type AlertsPanelProps = {
   upcomingReminders: Transaction[];
   totalReceivables: number;
   inventoryValue: number;
+  suppliers: SupplierOption[];
+  today: string;
 };
 
 export function AlertsPanel({
@@ -38,8 +42,18 @@ export function AlertsPanel({
   upcomingReminders,
   totalReceivables,
   inventoryValue,
+  suppliers,
+  today,
 }: AlertsPanelProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [reorderProduct, setReorderProduct] = useState<LowStockProduct | null>(null);
+  const [reorderOpen, setReorderOpen] = useState(false);
+
+  function openReorder(product: LowStockProduct) {
+    setSheetOpen(false);
+    setReorderProduct(product);
+    setReorderOpen(true);
+  }
 
   const totalAlerts =
     lowStockProducts.length + overdueCustomers.length + overdueSuppliers.length;
@@ -48,6 +62,14 @@ export function AlertsPanel({
     overdueCustomers.length > 0 ? overdueCustomers : customerBalances;
   const supplierFollowUps =
     overdueSuppliers.length > 0 ? overdueSuppliers : supplierBalances;
+  const supplierReminders = upcomingReminders.filter(
+    (transaction) =>
+      transaction.type === "supplier_purchase" &&
+      transaction.party_id !== null &&
+      supplierBalances.some(
+        (balance) => balance.party_id === transaction.party_id,
+      ),
+  );
 
   return (
     <div className="space-y-4">
@@ -127,7 +149,7 @@ export function AlertsPanel({
                     <Button
                       size="sm"
                       variant={idx === 0 ? "default" : "outline"}
-                      onClick={() => setSheetOpen(true)}
+                      onClick={() => openReorder(p)}
                       className={`h-7 px-2.5 text-[11px] rounded-lg shrink-0 cursor-pointer ${
                         idx === 0
                           ? "bg-[#0C3B37] hover:bg-[#092e2b] text-white"
@@ -208,7 +230,7 @@ export function AlertsPanel({
               </span>
             </div>
 
-            {supplierFollowUps.length === 0 && upcomingReminders.length === 0 ? (
+            {supplierFollowUps.length === 0 && supplierReminders.length === 0 ? (
               <p className="text-xs font-medium text-stone-600 rounded-xl bg-[#F8F6F2] px-3 py-2.5">
                 No upcoming supplier dues.
               </p>
@@ -252,7 +274,7 @@ export function AlertsPanel({
               </div>
             ) : (
               <div className="space-y-2">
-                {upcomingReminders.slice(0, 1).map((tx) => (
+                {supplierReminders.slice(0, 1).map((tx) => (
                   <div
                     key={tx.id}
                     className="rounded-xl bg-[#F8F6F2] border border-stone-200/80 p-3 flex items-center justify-between gap-2"
@@ -303,7 +325,19 @@ export function AlertsPanel({
         overdueSuppliers={overdueSuppliers}
         customerBalances={customerBalances}
         supplierBalances={supplierBalances}
+        onReorder={openReorder}
       />
+
+      {reorderProduct ? (
+        <RestockProductDialog
+          key={reorderProduct.id}
+          product={reorderProduct}
+          suppliers={suppliers}
+          today={today}
+          open={reorderOpen}
+          onOpenChange={setReorderOpen}
+        />
+      ) : null}
     </div>
   );
 }

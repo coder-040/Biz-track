@@ -25,6 +25,7 @@ export interface PartyRow {
 export interface SupplierTransactionRow {
   id: string;
   business_id: string;
+  supplier_order_id: string | null;
   type: string;
   party_id: string | null;
   amount: number;
@@ -56,6 +57,7 @@ export type EntryKind = "purchase" | "payment";
 export interface EntryFormState {
   kind: EntryKind;
   partyId: string;
+  orderId: string;
   amount: string;
   category: string;
   paymentMethod: SupplierPaymentMethod | "credit";

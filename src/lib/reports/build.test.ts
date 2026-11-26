@@ -76,6 +76,18 @@ const sources: ReportSources = {
       transaction_date: "2026-10-29",
       created_at: "2026-10-29T10:00:00Z",
     },
+    {
+      id: "paid-supplier-purchase",
+      type: "supplier_purchase",
+      party_id: "both-party",
+      amount: "20.00",
+      category: "Inventory",
+      payment_method: "bank",
+      description: null,
+      due_date: null,
+      transaction_date: "2026-11-01",
+      created_at: "2026-11-01T10:00:00Z",
+    },
   ],
   parties: [{ id: "both-party", name: "Mixed Party", type: "both" }],
   products: [
@@ -123,6 +135,22 @@ describe("buildReport", () => {
       { period: "2026-11-02", income: 100.5, expense: 0, net: 100.5 },
     ]);
     expect(report.summaries[0]?.value).toBe(100.5);
+  });
+
+  it("reports received customer payments and paid supplier costs, not unpaid credit", () => {
+    const report = buildReport(
+      sources,
+      "daily-income-expense",
+      "2026-10-29",
+      "2026-11-02",
+    );
+
+    expect(report.rows).toEqual([
+      { period: "2026-10-29", income: 0, expense: 10, net: -10 },
+      { period: "2026-10-30", income: 90, expense: 0, net: 90 },
+      { period: "2026-11-01", income: 0, expense: 20, net: -20 },
+      { period: "2026-11-02", income: 100.5, expense: 0, net: 100.5 },
+    ]);
   });
 
   it("uses FIFO allocation for customer overdue amounts and includes both-type parties", () => {

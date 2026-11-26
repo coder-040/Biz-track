@@ -26,10 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  initialActionState,
-  type ActionState,
-} from "@/lib/action-state"
+import { initialActionState } from "@/lib/action-state"
 import { formatQuantity } from "@/lib/format"
 import {
   calculateNewStock,
@@ -38,27 +35,35 @@ import {
 } from "@/lib/inventory"
 
 const movementTypes: Array<{ value: StockMovementType; label: string }> = [
-  { value: "purchase", label: "Purchase (add stock)" },
-  { value: "sale", label: "Sale (remove stock)" },
   { value: "damaged", label: "Damaged (remove stock)" },
   { value: "lost", label: "Lost (remove stock)" },
   { value: "adjustment", label: "Adjustment (increase or decrease)" },
 ]
 
 interface RecordMovementDialogProps {
-  product: Product
+  product: Pick<Product, "id" | "name" | "current_stock">
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
+  defaultQuantity?: number
 }
 
-export function RecordMovementDialog({ product }: RecordMovementDialogProps) {
+export function RecordMovementDialog({
+  product,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
+  defaultQuantity = 1,
+}: RecordMovementDialogProps) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
-  const [open, setOpen] = useState(false)
-  const [type, setType] = useState<StockMovementType>("purchase")
-  const [quantity, setQuantity] = useState("1")
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  const [type, setType] = useState<StockMovementType>("adjustment")
+  const [quantity, setQuantity] = useState(String(defaultQuantity))
   const [adjustmentDirection, setAdjustmentDirection] = useState<
     "increase" | "decrease"
   >("increase")
-  const [state, setState] = useState<ActionState>(initialActionState)
   const [pending, startTransition] = useTransition()
 
   const parsedQuantity = Number(quantity)
@@ -74,15 +79,17 @@ export function RecordMovementDialog({ product }: RecordMovementDialogProps) {
 
   function resetForm() {
     formRef.current?.reset()
-    setType("purchase")
-    setQuantity("1")
+    setType("adjustment")
+    setQuantity(String(defaultQuantity))
     setAdjustmentDirection("increase")
   }
 
   function handleOpenChange(nextOpen: boolean) {
-    setOpen(nextOpen)
+    setInternalOpen(nextOpen)
+    onOpenChange?.(nextOpen)
     if (nextOpen) {
-      setState(initialActionState)
+      setType("adjustment")
+      setQuantity(String(defaultQuantity))
     }
   }
 
@@ -92,29 +99,33 @@ export function RecordMovementDialog({ product }: RecordMovementDialogProps) {
 
     startTransition(async () => {
       const result = await recordStockMovement(initialActionState, formData)
-      setState(result)
 
-      if (result.status !== "success") return
+      if (result.status !== "success") {
+        toast.error(result.message)
+        return
+      }
 
       toast.success(result.message)
       resetForm()
-      setOpen(false)
+      handleOpenChange(false)
       router.refresh()
     })
   }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger render={<Button />}>
-        <ArrowLeftRightIcon aria-hidden="true" />
-        Record movement
-      </DialogTrigger>
+      {hideTrigger ? null : (
+        <DialogTrigger render={<Button />}>
+          <ArrowLeftRightIcon aria-hidden="true" />
+          Record movement
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Record stock movement</DialogTitle>
           <DialogDescription>
-            Update stock for {product.name}. The movement is logged in its
-            history.
+            Record damage, loss, or a stock adjustment for {product.name}. Use
+            Restock to add purchased inventory and its expense/payable.
           </DialogDescription>
         </DialogHeader>
 
@@ -127,7 +138,7 @@ export function RecordMovementDialog({ product }: RecordMovementDialogProps) {
               name="type"
               value={type}
               onValueChange={(value) =>
-                setType((value ?? "purchase") as StockMovementType)
+              setType((value ?? "adjustment") as StockMovementType)
               }
             >
               <SelectTrigger id="movement_type" className="w-full">
@@ -215,7 +226,7 @@ export function RecordMovementDialog({ product }: RecordMovementDialogProps) {
               placeholder="00000000-0000-0000-0000-000000000000"
             />
             <p className="text-xs text-muted-foreground">
-              Link a purchase or sale transaction when one already exists.
+              Link a related transaction when one already exists.
             </p>
           </div>
 
@@ -241,17 +252,11 @@ export function RecordMovementDialog({ product }: RecordMovementDialogProps) {
             ) : null}
           </div>
 
-          {state.status === "error" ? (
-            <p role="alert" className="text-sm text-destructive">
-              {state.message}
-            </p>
-          ) : null}
-
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              onClick={() => setOpen(false)}
+              onClick={() => handleOpenChange(false)}
               disabled={pending}
             >
               Cancel

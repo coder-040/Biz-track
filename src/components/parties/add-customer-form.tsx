@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { UserPlus } from "lucide-react";
 
 import { createCustomerAction } from "@/app/parties/actions";
@@ -18,12 +18,24 @@ import { Textarea } from "@/components/ui/textarea";
 import { initialActionState } from "@/lib/action-state";
 import { validatePartyInput } from "@/lib/credit/calculations";
 
-export function AddCustomerForm() {
+export function AddCustomerForm({
+  onSuccess,
+}: {
+  onSuccess?: (message: string) => void;
+}) {
+  const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction, pending] = useActionState(
     createCustomerAction,
     initialActionState,
   );
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (state.status === "success") {
+      formRef.current?.reset();
+      if (state.message) onSuccess?.(state.message);
+    }
+  }, [onSuccess, state]);
 
   const errors = { ...state.fieldErrors, ...clientErrors };
 
@@ -45,6 +57,7 @@ export function AddCustomerForm() {
 
   return (
     <form
+      ref={formRef}
       action={formAction}
       onSubmit={handleSubmit}
       className="space-y-4"
@@ -82,7 +95,10 @@ export function AddCustomerForm() {
           autoComplete="tel"
           placeholder="98XXXXXXXX"
         />
-        <p className={hintClass}>Optional. Shown on the customer list.</p>
+        <p className={hintClass}>
+          Optional. Duplicate names with the same phone are blocked across
+          customers and suppliers.
+        </p>
       </div>
 
       <div>

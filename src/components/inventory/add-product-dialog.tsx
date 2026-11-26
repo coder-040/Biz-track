@@ -25,10 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  initialActionState,
-  type ActionState,
-} from "@/lib/action-state"
+import { initialActionState } from "@/lib/action-state"
 import type { SupplierOption } from "@/lib/inventory"
 
 interface AddProductDialogProps {
@@ -40,14 +37,10 @@ export function AddProductDialog({ suppliers }: AddProductDialogProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const [open, setOpen] = useState(false)
   const [supplierId, setSupplierId] = useState("none")
-  const [state, setState] = useState<ActionState>(initialActionState)
   const [pending, startTransition] = useTransition()
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen)
-    if (nextOpen) {
-      setState(initialActionState)
-    }
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -56,9 +49,11 @@ export function AddProductDialog({ suppliers }: AddProductDialogProps) {
 
     startTransition(async () => {
       const result = await createProduct(initialActionState, formData)
-      setState(result)
 
-      if (result.status !== "success") return
+      if (result.status !== "success") {
+        toast.error(result.message)
+        return
+      }
 
       toast.success(result.message)
       formRef.current?.reset()
@@ -70,7 +65,7 @@ export function AddProductDialog({ suppliers }: AddProductDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger render={<Button />}>
+      <DialogTrigger render={<Button type="button" />}>
         <PlusIcon aria-hidden="true" />
         Add product
       </DialogTrigger>
@@ -86,6 +81,10 @@ export function AddProductDialog({ suppliers }: AddProductDialogProps) {
           <div className="grid gap-2">
             <Label htmlFor="name">Product name</Label>
             <Input id="name" name="name" required placeholder="A4 paper ream" />
+            <p className="text-xs text-muted-foreground">
+              Product names must be unique. Include size or variant in the name
+              when needed.
+            </p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -175,12 +174,6 @@ export function AddProductDialog({ suppliers }: AddProductDialogProps) {
               </SelectContent>
             </Select>
           </div>
-
-          {state.status === "error" ? (
-            <p role="alert" className="text-sm text-destructive">
-              {state.message}
-            </p>
-          ) : null}
 
           <DialogFooter>
             <Button

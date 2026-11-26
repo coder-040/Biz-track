@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -160,9 +161,6 @@ export function TransactionsClient({
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const filters = initialFilters;
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [auditWarning, setAuditWarning] = useState<string | null>(null);
   const [pendingAudit, setPendingAudit] = useState<AuditEntry | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -194,24 +192,26 @@ export function TransactionsClient({
     try {
       await writeAudit(fullEntry);
       setPendingAudit(null);
-      setAuditWarning(null);
     } catch (auditError) {
       setPendingAudit(fullEntry);
-      setAuditWarning(
-        `Saved, but audit logging failed: ${errorMessage(auditError)}. You can retry below.`,
+      toast.error(
+        `Saved, but audit logging failed: ${errorMessage(auditError)}.`,
+        {
+          action: {
+            label: "Retry audit",
+            onClick: () => void retryAudit(),
+          },
+        },
       );
     }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage(null);
-    setError(null);
-    setAuditWarning(null);
 
     const validationError = validateForm(form);
     if (validationError) {
-      setError(validationError);
+      toast.error(validationError);
       return;
     }
 
@@ -237,7 +237,7 @@ export function TransactionsClient({
           action: "update",
           changes: { before, after: data as unknown as TransactionRow },
         });
-        setMessage("Transaction updated.");
+        toast.success("Transaction updated.");
       } else {
         const { data, error: dbError } = await supabase
           .from("transactions")
@@ -253,14 +253,14 @@ export function TransactionsClient({
           action: "insert",
           changes: { before: null, after: data as unknown as TransactionRow },
         });
-        setMessage("Transaction saved.");
+        toast.success("Transaction saved.");
       }
 
       setEditingId(null);
       setForm(emptyForm());
       router.refresh();
     } catch (submitError) {
-      setError(errorMessage(submitError));
+      toast.error(errorMessage(submitError));
     } finally {
       setBusy(false);
     }
@@ -273,9 +273,6 @@ export function TransactionsClient({
     }
 
     setBusy(true);
-    setMessage(null);
-    setError(null);
-    setAuditWarning(null);
 
     try {
       const { error: dbError } = await supabase
@@ -292,10 +289,10 @@ export function TransactionsClient({
         action: "delete",
         changes: { before: row, after: null },
       });
-      setMessage("Transaction deleted.");
+      toast.success("Transaction deleted.");
       router.refresh();
     } catch (deleteError) {
-      setError(errorMessage(deleteError));
+      toast.error(errorMessage(deleteError));
     } finally {
       setBusy(false);
     }
@@ -307,10 +304,14 @@ export function TransactionsClient({
     try {
       await writeAudit(pendingAudit);
       setPendingAudit(null);
-      setAuditWarning(null);
-      setMessage("Audit entry recorded.");
+      toast.success("Audit entry recorded.");
     } catch (auditError) {
-      setAuditWarning(`Audit retry failed: ${errorMessage(auditError)}`);
+      toast.error(`Audit retry failed: ${errorMessage(auditError)}`, {
+        action: {
+          label: "Retry audit",
+          onClick: () => void retryAudit(),
+        },
+      });
     } finally {
       setBusy(false);
     }
@@ -329,14 +330,11 @@ export function TransactionsClient({
       description: row.description ?? "",
       attachment_url: row.attachment_url ?? "",
     });
-    setMessage(null);
-    setError(null);
   }
 
   function cancelEdit() {
     setEditingId(null);
     setForm(emptyForm());
-    setError(null);
   }
 
   function updateFilters(patch: Partial<TransactionFilters>) {
@@ -558,39 +556,6 @@ export function TransactionsClient({
             </div>
           </form>
 
-          {message ? (
-            <p
-              role="status"
-              className="mt-3 rounded-lg bg-secondary p-2 text-sm text-secondary-foreground"
-            >
-              {message}
-            </p>
-          ) : null}
-          {error ? (
-            <p
-              role="alert"
-              className="mt-3 rounded-lg bg-destructive/10 p-2 text-sm text-destructive"
-            >
-              {error}
-            </p>
-          ) : null}
-          {auditWarning ? (
-            <div
-              role="alert"
-              className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-sm"
-            >
-              <span>{auditWarning}</span>
-              <Button
-                type="button"
-                size="xs"
-                variant="outline"
-                onClick={retryAudit}
-                disabled={busy}
-              >
-                Retry audit
-              </Button>
-            </div>
-          ) : null}
         </CardContent>
       </Card>
 

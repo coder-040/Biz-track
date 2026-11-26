@@ -23,9 +23,14 @@ import {
 interface CreditSaleFormProps {
   partyId: string;
   today: string;
+  idPrefix?: string;
 }
 
-export function CreditSaleForm({ partyId, today }: CreditSaleFormProps) {
+export function CreditSaleForm({
+  partyId,
+  today,
+  idPrefix = "sale",
+}: CreditSaleFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction, pending] = useActionState(
     recordCreditSaleAction,
@@ -77,11 +82,11 @@ export function CreditSaleForm({ partyId, today }: CreditSaleFormProps) {
       ) : null}
 
       <div>
-        <Label htmlFor="sale-amount" className={labelClass}>
+        <Label htmlFor={`${idPrefix}-amount`} className={labelClass}>
           Amount <span className="text-destructive">*</span>
         </Label>
         <Input
-          id="sale-amount"
+          id={`${idPrefix}-amount`}
           name="amount"
           type="number"
           inputMode="decimal"
@@ -90,35 +95,35 @@ export function CreditSaleForm({ partyId, today }: CreditSaleFormProps) {
           placeholder="0.00"
           required
           aria-invalid={Boolean(errors.amount)}
-          aria-describedby={errors.amount ? "sale-amount-error" : undefined}
+          aria-describedby={errors.amount ? `${idPrefix}-amount-error` : undefined}
         />
-        <FieldError id="sale-amount-error" message={errors.amount} />
+        <FieldError id={`${idPrefix}-amount-error`} message={errors.amount} />
       </div>
 
       <div>
-        <Label htmlFor="sale-category" className={labelClass}>
+        <Label htmlFor={`${idPrefix}-category`} className={labelClass}>
           Category <span className="text-destructive">*</span>
         </Label>
         <Input
-          id="sale-category"
+          id={`${idPrefix}-category`}
           name="category"
           defaultValue="Credit sale"
           required
           aria-invalid={Boolean(errors.category)}
           aria-describedby={
-            errors.category ? "sale-category-error" : undefined
+            errors.category ? `${idPrefix}-category-error` : undefined
           }
         />
-        <FieldError id="sale-category-error" message={errors.category} />
+        <FieldError id={`${idPrefix}-category-error`} message={errors.category} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <Label htmlFor="sale-transaction-date" className={labelClass}>
+          <Label htmlFor={`${idPrefix}-transaction-date`} className={labelClass}>
             Transaction date <span className="text-destructive">*</span>
           </Label>
           <Input
-            id="sale-transaction-date"
+            id={`${idPrefix}-transaction-date`}
             name="transaction_date"
             type="date"
             defaultValue={today}
@@ -126,37 +131,44 @@ export function CreditSaleForm({ partyId, today }: CreditSaleFormProps) {
             required
             aria-invalid={Boolean(errors.transaction_date)}
             aria-describedby={
-              errors.transaction_date ? "sale-transaction-date-error" : undefined
+              errors.transaction_date
+                ? `${idPrefix}-transaction-date-error`
+                : undefined
             }
           />
           <FieldError
-            id="sale-transaction-date-error"
+            id={`${idPrefix}-transaction-date-error`}
             message={errors.transaction_date}
           />
         </div>
 
         <div>
-          <Label htmlFor="sale-due-date" className={labelClass}>
+          <Label htmlFor={`${idPrefix}-due-date`} className={labelClass}>
             Due date <span className="text-destructive">*</span>
           </Label>
           <Input
-            id="sale-due-date"
+            id={`${idPrefix}-due-date`}
             name="due_date"
             type="date"
             required
             aria-invalid={Boolean(errors.due_date)}
-            aria-describedby={errors.due_date ? "sale-due-date-error" : undefined}
+            aria-describedby={
+              errors.due_date ? `${idPrefix}-due-date-error` : undefined
+            }
           />
-          <FieldError id="sale-due-date-error" message={errors.due_date} />
+          <FieldError
+            id={`${idPrefix}-due-date-error`}
+            message={errors.due_date}
+          />
         </div>
       </div>
 
       <div>
-        <Label htmlFor="sale-description" className={labelClass}>
+        <Label htmlFor={`${idPrefix}-description`} className={labelClass}>
           Description
         </Label>
         <Textarea
-          id="sale-description"
+          id={`${idPrefix}-description`}
           name="description"
           rows={2}
           placeholder="What was bought on credit?"

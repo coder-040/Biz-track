@@ -4,12 +4,13 @@ import { revalidatePath } from "next/cache"
 
 import type { ActionState } from "@/lib/action-state"
 import { ACTOR_ID, ACTOR_NAME, BUSINESS_ID } from "@/lib/config"
+import { isISODate, todayISOInTimeZone } from "@/lib/date"
+import { formatCurrency } from "@/lib/format"
 import type { StockMovementType } from "@/lib/inventory"
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 
 const STOCK_MOVEMENT_TYPES: StockMovementType[] = [
   "purchase",
-  "sale",
   "damaged",
   "lost",
   "adjustment",
@@ -61,14 +62,18 @@ async function writeInventoryAudit(
 
 function databaseMessage(error: { code?: string; message: string }): string {
   if (error.code === "23505") {
+    if (error.message.includes("products_business_name_ci_unique")) {
+      return "A product with this name already exists. Use a distinct name for each variant.";
+    }
     return "That SKU is already used by another product."
   }
 
   if (
     error.code === "PGRST202" ||
-    error.message.includes("record_stock_movement")
+    error.message.includes("record_stock_movement") ||
+    error.message.includes("record_product_restock")
   ) {
-    return "The stock movement database function is missing. Run the latest supabase/schema.sql in the Supabase SQL editor, then try again."
+    return "A required inventory database function is missing. Run the latest supabase/schema.sql in the Supabase SQL editor, then try again."
   }
 
   return error.message
@@ -170,6 +175,7 @@ export async function createProduct(
       { before: null, after: created },
     )
     revalidatePath("/inventory")
+    revalidatePath("/suppliers")
     return {
       status: "success",
       message: `${name} was added to inventory.${auditWarning ? ` ${auditWarning}` : ""}`,
@@ -197,7 +203,14 @@ export async function recordStockMovement(
     return fail("Select a valid product.")
   }
 
+  if (type === "purchase") {
+    return fail("Use the Restock workflow to add purchased inventory.")
+  }
+
   if (!STOCK_MOVEMENT_TYPES.includes(type)) {
+    if (type === "sale") {
+      return fail("Use the Product Sales page to record sales and update stock.")
+    }
     return fail("Select a valid stock movement type.")
   }
 
@@ -255,6 +268,7 @@ export async function recordStockMovement(
 
     revalidatePath("/inventory")
     revalidatePath(`/inventory/${productId}`)
+    revalidatePath("/")
     return {
       status: "success",
       message: `${type[0].toUpperCase()}${type.slice(1)} recorded. Stock updated.`,
@@ -262,6 +276,114 @@ export async function recordStockMovement(
   } catch (error) {
     return fail(
       error instanceof Error ? error.message : "Could not record the movement."
+    )
+  }
+}
+
+export async function recordProductRestock(
+  formData: FormData
+): Promise<ActionState> {
+  const productId = text(formData, "product_id")
+  const supplierId = text(formData, "supplier_id")
+  const quantityText = text(formData, "quantity")
+  const unitCostText = text(formData, "unit_cost")
+  const paidAmountText = text(formData, "paid_amount")
+  const paymentMethod = text(formData, "payment_method")
+  const transactionDate = text(formData, "transaction_date")
+  const dueDate = optionalText(formData, "due_date")
+  const description = optionalText(formData, "description")
+  const quantity = Number(quantityText)
+  const unitCost = Number(unitCostText)
+  const paidAmount = Number(paidAmountText)
+  const validPaymentMethods = ["cash", "bank", "qr", "online"]
+  const today = todayISOInTimeZone("Asia/Kathmandu")
+
+  if (!UUID_PATTERN.test(productId)) return fail("Select a valid product.")
+  if (supplierId && !UUID_PATTERN.test(supplierId)) {
+    return fail("Select a valid supplier.")
+  }
+  if (
+    !/^\d+(\.\d{1,2})?$/.test(quantityText) ||
+    !Number.isFinite(quantity) ||
+    quantity <= 0 ||
+    quantity > 9999999999.99
+  ) {
+    return fail("Quantity must be greater than zero with at most 2 decimal places.")
+  }
+  if (
+    !/^\d+(\.\d{1,2})?$/.test(unitCostText) ||
+    !Number.isFinite(unitCost) ||
+    unitCost <= 0 ||
+    unitCost > 9999999999.99
+  ) {
+    return fail("Unit cost must be greater than zero with at most 2 decimal places.")
+  }
+  if (
+    !/^\d+(\.\d{1,2})?$/.test(paidAmountText) ||
+    !Number.isFinite(paidAmount) ||
+    paidAmount < 0 ||
+    paidAmount > 9999999999.99
+  ) {
+    return fail("Paid amount must be zero or greater with at most 2 decimal places.")
+  }
+  if (!validPaymentMethods.includes(paymentMethod)) {
+    return fail("Choose a valid payment method.")
+  }
+  if (!isISODate(transactionDate) || transactionDate > today) {
+    return fail("Choose a valid purchase date that is not in the future.")
+  }
+
+  const total = Math.round((quantity * unitCost + Number.EPSILON) * 100) / 100
+  if (total <= 0 || total > 9999999999.99) {
+    return fail("Restock total exceeds the supported amount.")
+  }
+  if (paidAmount > total) {
+    return fail("Paid amount cannot exceed the restock total.")
+  }
+
+  const payable = Math.round((total - paidAmount + Number.EPSILON) * 100) / 100
+  if (payable > 0) {
+    if (!supplierId) {
+      return fail("Choose a supplier when any restock amount will remain unpaid.")
+    }
+    if (!dueDate || !isISODate(dueDate) || dueDate < transactionDate) {
+      return fail("Enter a due date on or after the purchase date for the unpaid balance.")
+    }
+  }
+
+  try {
+    const supabase = createServerSupabaseClient()
+    const { error } = await supabase.rpc("record_product_restock", {
+      p_business_id: BUSINESS_ID,
+      p_product_id: productId,
+      p_supplier_id: supplierId || null,
+      p_quantity: quantity,
+      p_unit_cost: unitCost,
+      p_paid_amount: paidAmount,
+      p_payment_method: paymentMethod,
+      p_transaction_date: transactionDate,
+      p_due_date: payable > 0 ? dueDate : null,
+      p_description: description,
+      p_actor_id: ACTOR_ID,
+      p_actor_name: ACTOR_NAME,
+    })
+
+    if (error) return fail(databaseMessage(error))
+
+    revalidatePath("/inventory")
+    revalidatePath(`/inventory/${productId}`)
+    revalidatePath("/suppliers")
+    revalidatePath("/")
+    revalidatePath("/reports")
+    return {
+      status: "success",
+      message: payable > 0
+        ? `Restock recorded. ${formatCurrency(payable)} added to supplier payables.`
+        : "Paid restock recorded as an expense. Stock updated.",
+    }
+  } catch (error) {
+    return fail(
+      error instanceof Error ? error.message : "Could not record the restock."
     )
   }
 }

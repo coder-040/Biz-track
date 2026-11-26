@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { getDashboardData } from "@/lib/dashboard";
 import { formatNPR, formatDate } from "@/lib/format";
 import {
@@ -11,6 +10,8 @@ import {
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { WeeklyCashFlow } from "@/components/dashboard/weekly-cash-flow";
 import { AlertsPanel } from "@/components/dashboard/alerts-panel";
+import { QuickAddTransactionDialog } from "@/components/transactions/quick-add-transaction-dialog";
+import { ProductSaleDialog } from "@/components/sales/product-sale-dialog";
 import {
   ArrowDown,
   ArrowUp,
@@ -20,7 +21,6 @@ import {
   Truck,
   AlertTriangle,
   ArrowRight,
-  Download,
   RefreshCw,
   FileText,
   Smartphone,
@@ -30,6 +30,12 @@ import {
 
 function getPaymentBadge(method: string) {
   switch (method) {
+    case "credit":
+      return {
+        label: "Credit",
+        icon: CreditCard,
+        cls: "bg-amber-50 text-amber-700 border-amber-200/80",
+      };
     case "qr":
       return {
         label: "QR / Fonepay",
@@ -107,6 +113,8 @@ export default async function DashboardPage() {
       lowStockProducts={data.lowStockProducts}
       overdueCustomers={data.overdueCustomers}
       overdueSuppliers={data.overdueSuppliers}
+      suppliers={data.suppliers}
+      today={data.today}
       customerBalances={data.customerBalances}
       supplierBalances={data.supplierBalances}
     >
@@ -195,20 +203,12 @@ export default async function DashboardPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <Link
-                      href="/reconcile"
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#F4C44E] text-[#0C3B37] px-3.5 py-2 text-xs font-semibold shadow-xs hover:bg-[#e5b53f] transition-colors"
-                    >
-                      Transfer / Reconcile
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </Link>
-                    <Link
-                      href="/passbook"
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/15 text-white px-3.5 py-2 text-xs font-medium hover:bg-white/15 transition-colors"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      Passbook
-                    </Link>
+                    <ProductSaleDialog
+                      products={data.saleProducts}
+                      customers={data.saleCustomers}
+                      today={data.today}
+                    />
+                    <QuickAddTransactionDialog />
                   </div>
                 </div>
               </div>
@@ -232,7 +232,7 @@ export default async function DashboardPage() {
                   </p>
                   <p className="text-[11px] text-emerald-700 mt-1.5 font-semibold">
                     {data.todayIncomeCount}{" "}
-                    {data.todayIncomeCount === 1 ? "sale" : "sales"} recorded
+                    {data.todayIncomeCount === 1 ? "income entry" : "income entries"} recorded
                   </p>
                 </CardContent>
               </Card>
@@ -371,9 +371,16 @@ export default async function DashboardPage() {
                           const partyName = Array.isArray(tx.parties)
                             ? tx.parties[0]?.name
                             : tx.parties?.name;
+                          const isCustomerCredit =
+                            tx.type === "customer_credit_sale";
+                          const isUnpaidSupplierPurchase =
+                            tx.type === "supplier_purchase" &&
+                            tx.payment_method === "credit";
                           const isPositive =
                             tx.type === "income" ||
-                            tx.type === ("customer_payment" as string);
+                            tx.type === "customer_payment";
+                          const isUnpaidCredit =
+                            isCustomerCredit || isUnpaidSupplierPurchase;
 
                           return (
                             <tr
@@ -405,10 +412,18 @@ export default async function DashboardPage() {
                                 className={`py-3 text-right text-xs sm:text-sm font-bold whitespace-nowrap ${
                                   isPositive
                                     ? "text-emerald-700"
+                                    : isUnpaidCredit
+                                      ? "text-amber-700"
                                     : "text-red-600"
                                 }`}
                               >
-                                {isPositive ? "+" : "-"}
+                                {isCustomerCredit
+                                  ? "Due "
+                                  : isUnpaidSupplierPurchase
+                                    ? "Payable "
+                                    : isPositive
+                                      ? "+"
+                                      : "-"}
                                 {formatNPR(tx.amount)}
                               </td>
                             </tr>
@@ -433,6 +448,8 @@ export default async function DashboardPage() {
               upcomingReminders={data.upcomingReminders}
               totalReceivables={data.totalReceivables}
               inventoryValue={data.inventoryValue}
+              suppliers={data.suppliers}
+              today={data.today}
             />
           </div>
         </div>

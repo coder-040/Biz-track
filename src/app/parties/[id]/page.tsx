@@ -5,10 +5,8 @@ import { connection } from "next/server";
 import { ArrowLeft } from "lucide-react";
 
 import { AccountSummary } from "@/components/parties/account-summary";
-import { CreditSaleForm } from "@/components/parties/credit-sale-form";
 import { DemoBanner } from "@/components/parties/demo-banner";
 import { Ledger } from "@/components/parties/ledger";
-import { PaymentForm } from "@/components/parties/payment-form";
 import { CustomerDetailSkeleton } from "@/components/parties/skeletons";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -77,36 +75,6 @@ async function CustomerDetail({ params }: CustomerPageProps) {
       {!isSupabaseConfigured() ? <DemoBanner /> : null}
 
       <AccountSummary account={account} />
-
-      <div className="grid items-start gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Record credit sale</CardTitle>
-            <CardDescription>
-              Adds to the outstanding balance. A due date is required.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CreditSaleForm partyId={account.party.id} today={today} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Record payment</CardTitle>
-            <CardDescription>
-              Reduces the balance. Payments cannot exceed what is outstanding.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <PaymentForm
-              partyId={account.party.id}
-              today={today}
-              balance={account.summary.balance}
-            />
-          </CardContent>
-        </Card>
-      </div>
 
       <Card>
         <CardHeader>

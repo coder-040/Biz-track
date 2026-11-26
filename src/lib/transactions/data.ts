@@ -1,6 +1,7 @@
 import { ACTOR_ID, BUSINESS_ID } from "@/lib/config";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/transactions/date";
+import { cashFlowType } from "@/lib/transactions/accounting";
 import type {
   Role,
   Totals,
@@ -24,6 +25,13 @@ const TRANSACTION_COLUMNS = [
 ].join(", ");
 
 const ALLOWED_TYPES = ["income", "expense"] as const;
+const CASH_FLOW_TYPES = [
+  "income",
+  "expense",
+  "customer_payment",
+  "supplier_purchase",
+  "supplier_payment",
+] as const;
 
 interface TotalsRow {
   type: string;
@@ -82,7 +90,7 @@ export async function getTotals(): Promise<Totals> {
     .from("transactions")
     .select("type, amount, payment_method, transaction_date")
     .eq("business_id", BUSINESS_ID)
-    .in("type", [...ALLOWED_TYPES]);
+    .in("type", [...CASH_FLOW_TYPES]);
 
   if (error) {
     logQueryError("getTotals", error);
@@ -101,15 +109,17 @@ export async function getTotals(): Promise<Totals> {
   };
 
   for (const row of rows) {
+    const flowType = cashFlowType(row.type, row.payment_method);
+    if (!flowType) continue;
+
     const amount = Number(row.amount) || 0;
-    const isIncome = row.type === "income";
 
     if (row.transaction_date === today) {
-      if (isIncome) totals.todayIncome += amount;
+      if (flowType === "income") totals.todayIncome += amount;
       else totals.todayExpense += amount;
     }
 
-    const signedAmount = isIncome ? amount : -amount;
+    const signedAmount = flowType === "income" ? amount : -amount;
 
     if (row.payment_method === "cash") {
       totals.cash += signedAmount;

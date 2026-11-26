@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server"
 import {
   calculateInventoryValue,
   type Product,
+  type ProductOption,
   type StockMovement,
   type SupplierOption,
 } from "@/lib/inventory"
@@ -59,6 +60,22 @@ export async function getInventoryOverview(): Promise<InventoryOverview> {
     suppliers: (suppliersResult.data ?? []) as SupplierOption[],
     totalInventoryValue,
   }
+}
+
+export async function getActiveProducts(): Promise<ProductOption[]> {
+  const supabase = createServerSupabaseClient()
+  const { data, error } = await supabase
+    .from("products")
+    .select("id, name, sku")
+    .eq("business_id", BUSINESS_ID)
+    .eq("is_active", true)
+    .order("name", { ascending: true })
+
+  if (error) {
+    throw new Error(`Could not load products: ${error.message}`)
+  }
+
+  return (data ?? []) as ProductOption[]
 }
 
 export async function getProduct(productId: string): Promise<Product | null> {

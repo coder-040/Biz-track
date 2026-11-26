@@ -1,7 +1,10 @@
 import { connection } from "next/server";
 import { BUSINESS_ID } from "@/lib/config";
 import { addDaysISO, todayISOInTimeZone } from "@/lib/date";
+import type { SupplierOption } from "@/lib/inventory";
+import type { ProductSaleProduct, SaleCustomer } from "@/lib/sales/data";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { cashFlowType } from "@/lib/transactions/accounting";
 
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -12,7 +15,7 @@ export type Transaction = {
   party_id: string | null;
   amount: number;
   category: string;
-  payment_method: "cash" | "bank" | "qr" | "online";
+  payment_method: "cash" | "bank" | "qr" | "online" | "credit";
   description: string | null;
   due_date: string | null;
   transaction_date: string;
@@ -35,6 +38,7 @@ export type LowStockProduct = {
   current_stock: number;
   min_stock: number;
   purchase_price: number;
+  supplier_id: string | null;
 };
 
 export type WeeklyDay = {
@@ -47,6 +51,7 @@ export type WeeklyDay = {
 };
 
 export type DashboardData = {
+  today: string;
   // Today's income/expense
   todayIncome: number;
   todayExpense: number;
@@ -73,6 +78,9 @@ export type DashboardData = {
   lowStockProducts: LowStockProduct[];
   overdueCustomers: PartyBalance[];
   overdueSuppliers: PartyBalance[];
+  suppliers: SupplierOption[];
+  saleProducts: ProductSaleProduct[];
+  saleCustomers: SaleCustomer[];
   // Weekly chart
   weeklyFlow: WeeklyDay[];
 };
@@ -98,7 +106,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     // Today's transactions (income/expense totals)
     db
       .from("transactions")
-      .select("type, amount")
+      .select("type, amount, payment_method")
       .eq("business_id", BUSINESS_ID)
       .eq("transaction_date", today),
 
@@ -107,7 +115,13 @@ export async function getDashboardData(): Promise<DashboardData> {
       .from("transactions")
       .select("type, amount, payment_method")
       .eq("business_id", BUSINESS_ID)
-      .in("type", ["income", "expense"]),
+      .in("type", [
+        "income",
+        "expense",
+        "customer_payment",
+        "supplier_purchase",
+        "supplier_payment",
+      ]),
 
     // All transactions for receivables/payables computation
     db
@@ -126,7 +140,9 @@ export async function getDashboardData(): Promise<DashboardData> {
     // Active products for inventory value and low-stock
     db
       .from("products")
-      .select("id, name, current_stock, min_stock, purchase_price")
+      .select(
+        "id, name, sku, current_stock, min_stock, purchase_price, selling_price, supplier_id",
+      )
       .eq("business_id", BUSINESS_ID)
       .eq("is_active", true),
 
@@ -159,10 +175,16 @@ export async function getDashboardData(): Promise<DashboardData> {
     // Weekly income/expense (past 7 days)
     db
       .from("transactions")
-      .select("type, amount, transaction_date")
+      .select("type, amount, payment_method, transaction_date")
       .eq("business_id", BUSINESS_ID)
       .gte("transaction_date", addDaysISO(today, -6))
-      .in("type", ["income", "expense"]),
+      .in("type", [
+        "income",
+        "expense",
+        "customer_payment",
+        "supplier_purchase",
+        "supplier_payment",
+      ]),
   ]);
 
   const queryError = [
@@ -186,11 +208,14 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   if (todayTxResult.data) {
     for (const tx of todayTxResult.data) {
+      const flowType = cashFlowType(tx.type, tx.payment_method);
+      if (!flowType) continue;
+
       const amt = Number(tx.amount) || 0;
-      if (tx.type === "income") {
+      if (flowType === "income") {
         todayIncome += amt;
         todayIncomeCount++;
-      } else if (tx.type === "expense") {
+      } else {
         todayExpense += amt;
       }
     }
@@ -198,8 +223,11 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   if (cashBankTxResult.data) {
     for (const tx of cashBankTxResult.data) {
+      const flowType = cashFlowType(tx.type, tx.payment_method);
+      if (!flowType) continue;
+
       const amt = Number(tx.amount) || 0;
-      const sign = tx.type === "income" ? 1 : -1;
+      const sign = flowType === "income" ? 1 : -1;
       if (tx.payment_method === "cash") {
         cashBalance += sign * amt;
       } else if (["bank", "qr", "online"].includes(tx.payment_method ?? "")) {
@@ -356,6 +384,7 @@ export async function getDashboardData(): Promise<DashboardData> {
           current_stock: stock,
           min_stock: Number(p.min_stock) || 0,
           purchase_price: price,
+          supplier_id: p.supplier_id,
         });
       }
     }
@@ -378,9 +407,15 @@ export async function getDashboardData(): Promise<DashboardData> {
     for (const tx of weeklyTxResult.data) {
       const entry = weeklyMap.get(tx.transaction_date);
       if (!entry) continue;
+      const flowType = cashFlowType(tx.type, tx.payment_method);
+      if (!flowType) continue;
+
       const amt = Number(tx.amount) || 0;
-      if (tx.type === "income") entry.income += amt;
-      else if (tx.type === "expense") entry.expense += amt;
+      if (flowType === "income") {
+        entry.income += amt;
+      } else {
+        entry.expense += amt;
+      }
     }
   }
 
@@ -398,6 +433,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   });
 
   return {
+    today,
     todayIncome,
     todayExpense,
     todayIncomeCount,
@@ -417,6 +453,20 @@ export async function getDashboardData(): Promise<DashboardData> {
     lowStockProducts,
     overdueCustomers,
     overdueSuppliers,
+    suppliers: (partiesResult.data ?? [])
+      .filter((party) => party.type === "supplier" || party.type === "both")
+      .map((party) => ({ id: party.id, name: party.name })),
+    saleProducts: (productsResult.data ?? []).map((product) => ({
+      id: product.id,
+      name: product.name,
+      sku: product.sku,
+      current_stock: Number(product.current_stock),
+      purchase_price: Number(product.purchase_price),
+      selling_price: Number(product.selling_price),
+    })),
+    saleCustomers: (partiesResult.data ?? [])
+      .filter((party) => party.type === "customer" || party.type === "both")
+      .map((party) => ({ id: party.id, name: party.name })),
     weeklyFlow,
   };
 }

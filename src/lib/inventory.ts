@@ -19,6 +19,12 @@ export interface Product {
   created_at: string
 }
 
+export interface ProductOption {
+  id: string
+  name: string
+  sku: string | null
+}
+
 export interface SupplierOption {
   id: string
   name: string
@@ -97,6 +103,13 @@ export function isLowStock(
 ): boolean {
   if (!isActive) return false
   return currentStock <= minStock
+}
+
+export function suggestedReorderQuantity(
+  currentStock: number,
+  minStock: number
+): number {
+  return Math.max(1, minStock - currentStock)
 }
 
 /**

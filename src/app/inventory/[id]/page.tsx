@@ -166,7 +166,7 @@ export default async function ProductPage({
                 />
                 <p className="font-medium">No movements yet</p>
                 <p className="max-w-sm text-sm text-muted-foreground">
-                  Record a purchase, sale or adjustment to start the history.
+                  Record a restock, sale or adjustment to start the history.
                 </p>
               </div>
             ) : (

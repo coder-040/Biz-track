@@ -16,10 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import {
-  initialActionState,
-  type ActionState,
-} from "@/lib/action-state"
+import { initialActionState } from "@/lib/action-state"
 
 interface ProductStatusButtonProps {
   productId: string
@@ -32,14 +29,10 @@ export function ProductStatusButton({
 }: ProductStatusButtonProps) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const [state, setState] = useState<ActionState>(initialActionState)
   const [pending, startTransition] = useTransition()
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen)
-    if (nextOpen) {
-      setState(initialActionState)
-    }
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -51,9 +44,10 @@ export function ProductStatusButton({
         ? await archiveProduct(initialActionState, formData)
         : await restoreProduct(initialActionState, formData)
 
-      setState(result)
-
-      if (result.status !== "success") return
+      if (result.status !== "success") {
+        toast.error(result.message)
+        return
+      }
 
       toast.success(result.message)
       setOpen(false)
@@ -87,11 +81,6 @@ export function ProductStatusButton({
 
         <form onSubmit={handleSubmit}>
           <input type="hidden" name="product_id" value={productId} />
-          {state.status === "error" ? (
-            <p role="alert" className="mb-3 text-sm text-destructive">
-              {state.message}
-            </p>
-          ) : null}
           <DialogFooter>
             <Button
               type="button"

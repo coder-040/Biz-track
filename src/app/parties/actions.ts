@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
 import type { ActionState } from "@/lib/action-state";
 import {
@@ -91,7 +90,10 @@ export async function createCustomerAction(
   }
 
   revalidatePath("/parties");
-  redirect(`/parties/${party.id}`);
+  return {
+    status: "success",
+    message: `${party.name} was added. You can now record credit sales and payments.`,
+  };
 }
 
 export async function recordCreditSaleAction(

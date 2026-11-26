@@ -14,6 +14,7 @@ import {
   listDemoTransactions,
   listDemoTransactionsForParty,
 } from "@/lib/credit/demo-store";
+import { hasSamePartyIdentity } from "@/lib/credit/party-identity";
 import {
   CREDIT_SALE_TYPE,
   CUSTOMER_PAYMENT_TYPE,
@@ -230,6 +231,11 @@ export async function createCustomer(
   input: CreatePartyInput,
 ): Promise<Party> {
   if (!isSupabaseConfigured()) {
+    if (listDemoParties().some((party) => hasSamePartyIdentity(party, input))) {
+      throw new Error(
+        "A customer or supplier with this name and phone number already exists.",
+      );
+    }
     return insertDemoParty(input);
   }
 
@@ -248,6 +254,14 @@ export async function createCustomer(
 
   if (error) {
     logQueryError("createCustomer", error);
+    if (
+      error.code === "23505" &&
+      error.message.includes("parties_business_name_phone_unique")
+    ) {
+      throw new Error(
+        "A customer or supplier with this name and phone number already exists.",
+      );
+    }
     throw new Error("Could not save the customer.");
   }
 

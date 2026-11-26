@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   AlertTriangleIcon,
   DatabaseIcon,
-  PlusIcon,
   UserPlusIcon,
   UsersIcon,
   WalletIcon,
@@ -54,16 +53,6 @@ export function Sidebar({ demo }: SidebarProps) {
               Nepal Edition
             </span>
           </span>
-        </Link>
-      </div>
-
-      <div className="mt-8 px-5">
-        <Link
-          href="/parties#add-customer"
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-orange text-sm font-semibold text-brand-orange-foreground shadow-float transition-colors hover:bg-brand-orange/90 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-white/25"
-        >
-          <PlusIcon className="size-4" aria-hidden="true" />
-          Quick add
         </Link>
       </div>
 
