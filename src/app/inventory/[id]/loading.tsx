@@ -2,8 +2,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 export default function ProductLoading() {
   return (
-    <main
-      className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8"
+    <div
+      className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8"
       aria-label="Loading product"
     >
       <Skeleton className="h-8 w-36" />
@@ -17,6 +17,6 @@ export default function ProductLoading() {
         ))}
       </div>
       <Skeleton className="h-80" />
-    </main>
+    </div>
   )
 }

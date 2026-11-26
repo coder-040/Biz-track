@@ -108,3 +108,55 @@ export function calculateInventoryValue(
 ): number {
   return Math.max(0, currentStock) * purchasePrice
 }
+
+/**
+ * Calculates the retail value of the stock on hand for a product.
+ */
+export function calculateRetailValue(
+  currentStock: number,
+  sellingPrice: number
+): number {
+  return Math.max(0, currentStock) * sellingPrice
+}
+
+export type StockStatus = "in" | "low" | "out" | "archived"
+
+/**
+ * Resolves the display status for a product. Out-of-stock takes priority over
+ * the reorder threshold so empty shelves are surfaced separately.
+ */
+export function getStockStatus(
+  currentStock: number,
+  minStock: number,
+  isActive: boolean = true
+): StockStatus {
+  if (!isActive) return "archived"
+  if (currentStock <= 0) return "out"
+  if (currentStock <= minStock) return "low"
+  return "in"
+}
+
+/**
+ * Percentage of a two-times-minimum target currently on hand, clamped to
+ * 0–100. Used for the compact stock-level bars.
+ */
+export function stockLevelPercent(
+  currentStock: number,
+  minStock: number
+): number {
+  const target = Math.max(minStock * 2, 1)
+  const percent = (Math.max(0, currentStock) / target) * 100
+  return Math.min(100, Math.max(0, Math.round(percent)))
+}
+
+/**
+ * Gross margin on cost, as a percentage. Returns 100 when there is no cost
+ * basis but a selling price exists.
+ */
+export function calculateMarginPercent(
+  purchasePrice: number,
+  sellingPrice: number
+): number {
+  if (purchasePrice <= 0) return sellingPrice > 0 ? 100 : 0
+  return ((sellingPrice - purchasePrice) / purchasePrice) * 100
+}

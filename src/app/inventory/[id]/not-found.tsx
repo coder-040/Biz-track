@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
 
 export default function ProductNotFound() {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-4 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="mx-auto flex w-full max-w-3xl flex-col justify-center gap-4 px-4 py-8 sm:px-6 lg:px-8">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -36,6 +36,6 @@ export default function ProductNotFound() {
           </Link>
         </CardContent>
       </Card>
-    </main>
+    </div>
   )
 }

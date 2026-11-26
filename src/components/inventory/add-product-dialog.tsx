@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState, useTransition, type FormEvent } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Loader2Icon, PlusIcon } from "lucide-react"
 import { toast } from "sonner"
 
@@ -33,20 +33,38 @@ import type { SupplierOption } from "@/lib/inventory"
 
 interface AddProductDialogProps {
   suppliers: SupplierOption[]
+  defaultOpen?: boolean
 }
 
-export function AddProductDialog({ suppliers }: AddProductDialogProps) {
+export function AddProductDialog({
+  suppliers,
+  defaultOpen = false,
+}: AddProductDialogProps) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const formRef = useRef<HTMLFormElement>(null)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const [supplierId, setSupplierId] = useState("none")
   const [state, setState] = useState<ActionState>(initialActionState)
   const [pending, startTransition] = useTransition()
+
+  function clearAddParam() {
+    if (searchParams.get("add") !== "1") return
+
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete("add")
+    const nextQuery = nextParams.toString()
+
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname)
+  }
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen)
     if (nextOpen) {
       setState(initialActionState)
+    } else {
+      clearAddParam()
     }
   }
 
@@ -64,15 +82,18 @@ export function AddProductDialog({ suppliers }: AddProductDialogProps) {
       formRef.current?.reset()
       setSupplierId("none")
       setOpen(false)
+      clearAddParam()
       router.refresh()
     })
   }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger render={<Button />}>
+      <DialogTrigger
+        render={<Button variant="gold" className="h-9 rounded-xl" />}
+      >
         <PlusIcon aria-hidden="true" />
-        Add product
+        Add New Product
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>

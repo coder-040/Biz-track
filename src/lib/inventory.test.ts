@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest"
 import {
   calculateInventoryValue,
+  calculateMarginPercent,
   calculateNewStock,
+  calculateRetailValue,
+  getStockStatus,
   isLowStock,
   movementDelta,
+  stockLevelPercent,
 } from "./inventory"
 
 describe("inventory business logic", () => {
@@ -61,6 +65,56 @@ describe("inventory business logic", () => {
     it("returns 0 if current_stock is 0 or negative", () => {
       expect(calculateInventoryValue(0, 10)).toBe(0)
       expect(calculateInventoryValue(-5, 10)).toBe(0)
+    })
+  })
+
+  describe("calculateRetailValue", () => {
+    it("multiplies current_stock by selling_price", () => {
+      expect(calculateRetailValue(10, 25)).toBe(250)
+    })
+
+    it("returns 0 if current_stock is 0 or negative", () => {
+      expect(calculateRetailValue(0, 25)).toBe(0)
+      expect(calculateRetailValue(-5, 25)).toBe(0)
+    })
+  })
+
+  describe("getStockStatus", () => {
+    it("separates out-of-stock from low stock", () => {
+      expect(getStockStatus(0, 5, true)).toBe("out")
+      expect(getStockStatus(3, 5, true)).toBe("low")
+      expect(getStockStatus(6, 5, true)).toBe("in")
+    })
+
+    it("returns archived for inactive products", () => {
+      expect(getStockStatus(0, 5, false)).toBe("archived")
+      expect(getStockStatus(10, 5, false)).toBe("archived")
+    })
+  })
+
+  describe("stockLevelPercent", () => {
+    it("tracks progress against twice the minimum threshold", () => {
+      expect(stockLevelPercent(0, 10)).toBe(0)
+      expect(stockLevelPercent(10, 10)).toBe(50)
+      expect(stockLevelPercent(20, 10)).toBe(100)
+      expect(stockLevelPercent(40, 10)).toBe(100)
+    })
+
+    it("handles a zero threshold and negative stock", () => {
+      expect(stockLevelPercent(5, 0)).toBe(100)
+      expect(stockLevelPercent(-5, 10)).toBe(0)
+    })
+  })
+
+  describe("calculateMarginPercent", () => {
+    it("returns gross margin on cost", () => {
+      expect(calculateMarginPercent(100, 125)).toBe(25)
+      expect(calculateMarginPercent(100, 90)).toBe(-10)
+    })
+
+    it("returns 100 when there is no cost basis", () => {
+      expect(calculateMarginPercent(0, 50)).toBe(100)
+      expect(calculateMarginPercent(0, 0)).toBe(0)
     })
   })
 })

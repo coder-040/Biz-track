@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import type { ActionState } from "@/lib/action-state"
+import { BUSINESS_ID } from "@/lib/config"
 import type { StockMovementType } from "@/lib/inventory"
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 
@@ -92,6 +93,7 @@ export async function createProduct(
   try {
     const supabase = createServerSupabaseClient()
     const { error } = await supabase.from("products").insert({
+      business_id: BUSINESS_ID,
       name,
       sku,
       category,

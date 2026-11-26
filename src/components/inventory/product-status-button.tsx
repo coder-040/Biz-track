@@ -24,11 +24,13 @@ import {
 interface ProductStatusButtonProps {
   productId: string
   isActive: boolean
+  compact?: boolean
 }
 
 export function ProductStatusButton({
   productId,
   isActive,
+  compact = false,
 }: ProductStatusButtonProps) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -64,14 +66,32 @@ export function ProductStatusButton({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger
-        render={<Button variant={isActive ? "destructive" : "outline"} />}
+        render={
+          <Button
+            variant={
+              compact ? "ghost" : isActive ? "destructive" : "outline"
+            }
+            size={compact ? "icon-sm" : "default"}
+            className={compact ? "text-muted-foreground" : undefined}
+            aria-label={isActive ? "Archive product" : "Restore product"}
+            title={isActive ? "Archive product" : "Restore product"}
+          />
+        }
       >
         {isActive ? (
           <ArchiveIcon aria-hidden="true" />
         ) : (
           <RotateCcwIcon aria-hidden="true" />
         )}
-        {isActive ? "Archive product" : "Restore product"}
+        {compact ? (
+          <span className="sr-only">
+            {isActive ? "Archive product" : "Restore product"}
+          </span>
+        ) : isActive ? (
+          "Archive product"
+        ) : (
+          "Restore product"
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

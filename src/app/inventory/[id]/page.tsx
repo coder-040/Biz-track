@@ -12,7 +12,7 @@ import { MovementTypeBadge } from "@/components/inventory/movement-type-badge"
 import { ProductStatusButton } from "@/components/inventory/product-status-button"
 import { RecordMovementDialog } from "@/components/inventory/record-movement-dialog"
 import { StatCard } from "@/components/inventory/stat-card"
-import { Badge } from "@/components/ui/badge"
+import { StockStatusBadge } from "@/components/inventory/stock-status-badge"
 import { buttonVariants } from "@/components/ui/button"
 import {
   Card,
@@ -30,11 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { formatCurrency, formatMovementDate, formatQuantity } from "@/lib/format"
-import {
-  calculateInventoryValue,
-  isLowStock,
-  movementDelta,
-} from "@/lib/inventory"
+import { calculateInventoryValue, movementDelta } from "@/lib/inventory"
 import { getProduct, getStockMovements } from "@/lib/inventory-data"
 import { cn } from "@/lib/utils"
 
@@ -55,14 +51,9 @@ export default async function ProductPage({
   }
 
   const movements = await getStockMovements(product.id)
-  const lowStock = isLowStock(
-    product.current_stock,
-    product.min_stock,
-    product.is_active
-  )
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
       <div>
         <Link
           href="/inventory"
@@ -76,16 +67,14 @@ export default async function ProductPage({
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">
+            <h1 className="text-3xl font-bold tracking-tight">
               {product.name}
             </h1>
-            {!product.is_active ? (
-              <Badge variant="outline">Archived</Badge>
-            ) : lowStock ? (
-              <Badge variant="destructive">Low stock</Badge>
-            ) : (
-              <Badge variant="secondary">In stock</Badge>
-            )}
+            <StockStatusBadge
+              currentStock={product.current_stock}
+              minStock={product.min_stock}
+              isActive={product.is_active}
+            />
           </div>
           <p className="text-sm text-muted-foreground">
             {product.sku ? `SKU ${product.sku}` : "No SKU"}
@@ -234,6 +223,6 @@ export default async function ProductPage({
           </CardContent>
         </Card>
       </section>
-    </main>
+    </div>
   )
 }

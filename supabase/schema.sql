@@ -1,8 +1,13 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
+--
+-- Multi-tenant note: the live project scopes rows with business_id. products
+-- enforces NOT NULL, so inserts must send NEXT_PUBLIC_BIZTRACK_BUSINESS_ID (see
+-- src/lib/config.ts and src/app/inventory/actions.ts).
 
 CREATE TABLE public.parties (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
+  business_id uuid,
   name text NOT NULL,
   phone text,
   type text NOT NULL CHECK (type = ANY (ARRAY['customer'::text, 'supplier'::text, 'both'::text])),
@@ -12,6 +17,7 @@ CREATE TABLE public.parties (
 );
 CREATE TABLE public.products (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL,
   name text NOT NULL,
   sku text UNIQUE,
   category text,
@@ -27,6 +33,7 @@ CREATE TABLE public.products (
 );
 CREATE TABLE public.transactions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
+  business_id uuid,
   type text NOT NULL CHECK (type = ANY (ARRAY['income'::text, 'expense'::text, 'customer_credit_sale'::text, 'customer_payment'::text, 'supplier_purchase'::text, 'supplier_payment'::text])),
   party_id uuid,
   amount numeric NOT NULL CHECK (amount > 0::numeric),
@@ -42,6 +49,7 @@ CREATE TABLE public.transactions (
 );
 CREATE TABLE public.stock_movements (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
+  business_id uuid,
   product_id uuid NOT NULL,
   transaction_id uuid,
   type text NOT NULL CHECK (type = ANY (ARRAY['purchase'::text, 'sale'::text, 'damaged'::text, 'lost'::text, 'adjustment'::text])),
