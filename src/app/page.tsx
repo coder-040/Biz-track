@@ -1,5 +1,6 @@
 
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import {
@@ -122,11 +123,10 @@ const BENEFITS = [
   "Make decisions with better visibility.",
 ];
 
-export default async function LandingPage() {
-  // Ensure this page renders at request time.
+// Authentication and request-time logic belong inside Suspense.
+async function LandingContent() {
   await connection();
 
-  // Check the current Supabase authentication session.
   const supabase = await createServerSupabaseClient();
 
   const {
@@ -405,5 +405,16 @@ export default async function LandingPage() {
 
       <SiteFooter />
     </div>
+  );
+}
+
+// Keep the page component synchronous and render dynamic content under Suspense.
+export default function LandingPage() {
+  return (
+    <Suspense
+      fallback={<div className="min-h-screen bg-[#F8FAFC]" />}
+    >
+      <LandingContent />
+    </Suspense>
   );
 }
