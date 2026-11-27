@@ -1,5 +1,7 @@
+
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { TransactionsClient } from "@/components/transactions/transactions-client";
 import { TransactionsSkeleton } from "@/components/transactions/transactions-skeleton";
 import {
@@ -17,7 +19,10 @@ export const metadata: Metadata = {
 async function TransactionsLoader({
   searchParams,
 }: Pick<PageProps<"/transactions">, "searchParams">) {
+  await connection();
+
   const filters = parseTransactionFilters(await searchParams);
+
   const [initialRows, totals, role] = await Promise.all([
     getTransactions(filters),
     getTotals(),
@@ -38,9 +43,12 @@ export default function Page({ searchParams }: PageProps<"/transactions">) {
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Transactions
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Record everyday income and expenses. Totals also include customer receipts and paid supplier costs from their ledgers.
+          Record everyday income and expenses. Totals also include customer
+          receipts and paid supplier costs from their ledgers.
         </p>
       </header>
 
