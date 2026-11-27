@@ -51,6 +51,7 @@ export type WeeklyDay = {
 
 export type DashboardData = {
   today: string;
+  userName: string;
   // Today's income/expense
   todayIncome: number;
   todayExpense: number;
@@ -88,7 +89,7 @@ export type DashboardData = {
 
 export async function getDashboardData(): Promise<DashboardData> {
   await connection();
-  const { supabase: db, business } = await requireBusinessPermission("view_dashboard");
+  const { supabase: db, business, user } = await requireBusinessPermission("view_dashboard");
   const businessId = business.id;
   const today = todayISOInTimeZone("Asia/Kathmandu");
 
@@ -102,6 +103,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     remindersTxResult,
     partiesResult,
     weeklyTxResult,
+    profileResult,
   ] = await Promise.all([
     // Today's transactions (income/expense totals)
     db
@@ -185,6 +187,13 @@ export async function getDashboardData(): Promise<DashboardData> {
         "supplier_purchase",
         "supplier_payment",
       ]),
+
+    // Current user's display name for the greeting
+    db
+      .from("user_profiles")
+      .select("full_name")
+      .eq("id", user.id)
+      .maybeSingle(),
   ]);
 
   const queryError = [
@@ -198,6 +207,12 @@ export async function getDashboardData(): Promise<DashboardData> {
     weeklyTxResult.error,
   ].find(Boolean);
   if (queryError) throw new Error("Failed to load dashboard data.");
+
+  const userName =
+    (profileResult.data?.full_name ?? "").trim() ||
+    String(user.user_metadata?.full_name ?? "").trim() ||
+    user.email?.split("@")[0] ||
+    "there";
 
   // ── Today's income/expense ──────────────────────────────────────────────────
   let todayIncome = 0;
@@ -434,6 +449,7 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   return {
     today,
+    userName,
     todayIncome,
     todayExpense,
     todayIncomeCount,

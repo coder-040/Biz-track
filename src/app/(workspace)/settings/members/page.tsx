@@ -2,17 +2,23 @@ import { connection } from "next/server";
 import { MembersClient } from "@/components/settings/members-client";
 import { requireBusinessPermissions } from "@/lib/auth/server";
 
+interface MemberRow {
+  user_id: string;
+  full_name: string | null;
+  email: string | null;
+  role: "owner" | "admin" | "staff";
+  joined_at: string;
+  is_active: boolean;
+}
+
 export default async function MembersPage() {
   await connection();
   const context = await requireBusinessPermissions("manage_members");
 
   const [membersResult, invitationsResult] = await Promise.all([
-    context.supabase
-      .from("business_members")
-      .select("user_id, role, joined_at, is_active")
-      .eq("business_id", context.business.id)
-      .eq("is_active", true)
-      .order("joined_at", { ascending: true }),
+    context.supabase.rpc("list_business_members", {
+      p_business_id: context.business.id,
+    }),
     context.supabase
       .from("business_invitations")
       .select("id, invited_email, role, expires_at, created_at")
@@ -35,7 +41,7 @@ export default async function MembersPage() {
         </p>
       </header>
       <MembersClient
-        members={membersResult.data ?? []}
+        members={(membersResult.data ?? []) as MemberRow[]}
         invitations={invitationsResult.data ?? []}
         invitationsError={invitationsResult.error?.message ?? null}
       />

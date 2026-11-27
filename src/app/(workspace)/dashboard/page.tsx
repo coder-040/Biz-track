@@ -130,7 +130,7 @@ async function DashboardContent() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h2 className="text-2xl font-extrabold tracking-tight text-stone-950">
-              नमस्ते Owner ji{" "}
+              नमस्ते {data.userName}{" "}
               <span className="text-sm font-medium text-stone-600">
                 (Good day)
               </span>

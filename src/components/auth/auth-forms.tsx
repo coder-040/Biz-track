@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
 import { Eye, EyeOff } from "lucide-react";
+import { toast } from "sonner";
 import {
   createBusiness,
   register,
@@ -21,6 +22,11 @@ const INPUT_CLASS =
   "h-11 rounded-xl border-stone-200 bg-white px-3 text-sm focus-visible:ring-[#0C3B37]/25";
 
 function ActionMessage({ state }: { state: AuthActionState }) {
+  useEffect(() => {
+    if (state.error) toast.error(state.error);
+    else if (state.success) toast.success(state.success);
+  }, [state]);
+
   if (state.error) {
     return (
       <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

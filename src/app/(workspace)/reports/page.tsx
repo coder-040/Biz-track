@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { ReportsClient } from "@/components/reports/reports-client";
 import { ReportsSkeleton } from "@/components/reports/reports-skeleton";
+import { todayISOInTimeZone } from "@/lib/date";
 import { getReportSources } from "@/lib/reports/data";
 
 export const metadata: Metadata = {
@@ -10,7 +12,9 @@ export const metadata: Metadata = {
 };
 
 async function ReportsContent() {
+  await connection();
   const sources = await getReportSources();
+  const today = todayISOInTimeZone("Asia/Kathmandu");
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
       <header>
@@ -19,7 +23,7 @@ async function ReportsContent() {
           Review business activity and export a filtered report for your records.
         </p>
       </header>
-      <ReportsClient sources={sources} />
+      <ReportsClient sources={sources} today={today} />
     </main>
   );
 }

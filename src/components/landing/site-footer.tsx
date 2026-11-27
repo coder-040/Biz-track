@@ -15,6 +15,8 @@ const ACCOUNT_LINKS = [
   { label: "Terms of Service", href: "/terms" },
 ];
 
+const COPYRIGHT_YEAR = new Date().getFullYear();
+
 export function SiteFooter() {
   return (
     <footer className="bg-[#0C3B37] text-emerald-50">
@@ -63,7 +65,7 @@ export function SiteFooter() {
       </div>
       <div className="border-t border-white/10">
         <p className="mx-auto w-full max-w-7xl px-4 py-5 text-xs text-emerald-100/60 sm:px-6 lg:px-8">
-          © {new Date().getFullYear()} BizTrack. All rights reserved.
+          © {COPYRIGHT_YEAR} BizTrack. All rights reserved.
         </p>
       </div>
     </footer>

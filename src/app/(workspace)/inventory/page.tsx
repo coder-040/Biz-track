@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import { connection } from "next/server"
 import Link from "next/link"
 import {
   AlertTriangleIcon,
@@ -28,6 +29,7 @@ export const metadata = {
 }
 
 async function InventoryContent() {
+  await connection()
   const {
     activeProducts,
     archivedProducts,

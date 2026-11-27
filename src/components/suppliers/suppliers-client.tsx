@@ -31,7 +31,6 @@ import { writeAudit, type AuditEntry } from "@/lib/audit";
 import { formatCurrency } from "@/lib/format";
 import type { ProductOption } from "@/lib/inventory";
 import { supabase } from "@/lib/supabase/client";
-import { todayISO } from "@/lib/date";
 import {
   buildSummaries,
   createSupplierOrderPaymentForm,
@@ -81,13 +80,14 @@ interface SuppliersClientProps {
   initialOrders: SupplierOrder[];
   initialProducts: ProductOption[];
   role: Role;
+  today: string;
 }
 
 function emptySupplierForm(): SupplierFormState {
   return { name: "", phone: "", address: "", type: "supplier" };
 }
 
-function emptyEntryForm(): EntryFormState {
+function emptyEntryForm(today: string): EntryFormState {
   return {
     kind: "purchase",
     partyId: "",
@@ -95,7 +95,7 @@ function emptyEntryForm(): EntryFormState {
     amount: "",
     category: "",
     paymentMethod: "credit",
-    transactionDate: todayISO(),
+    transactionDate: today,
     dueDate: "",
     description: "",
     attachmentUrl: "",
@@ -178,6 +178,7 @@ export function SuppliersClient({
   initialOrders,
   initialProducts,
   role,
+  today,
 }: SuppliersClientProps) {
   const router = useRouter();
   const { context } = useBusinessContext();
@@ -188,7 +189,7 @@ export function SuppliersClient({
   const [orders, setOrders] = useState(initialOrders);
   const [supplierForm, setSupplierForm] = useState<SupplierFormState>(emptySupplierForm);
   const [supplierDialogOpen, setSupplierDialogOpen] = useState(false);
-  const [entryForm, setEntryForm] = useState<EntryFormState>(emptyEntryForm);
+  const [entryForm, setEntryForm] = useState<EntryFormState>(() => emptyEntryForm(today));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pendingAudit, setPendingAudit] = useState<AuditEntry | null>(null);
   const [busy, setBusy] = useState(false);
@@ -198,7 +199,7 @@ export function SuppliersClient({
       context.activeRole === role &&
       can(context.activeRole, "manage_finances", context.activePermissions),
   );
-  const summaries = buildSummaries(initialParties, transactions, todayISO());
+  const summaries = buildSummaries(initialParties, transactions, today);
   const overdueSummaries = summaries.filter((summary) => summary.overdue);
   const totalPayable = summaries.reduce((total, summary) => total + summary.payable, 0);
 
@@ -585,7 +586,7 @@ export function SuppliersClient({
           );
         }
         setEditingId(null);
-        setEntryForm(emptyEntryForm());
+        setEntryForm(emptyEntryForm(today));
         try {
           await refreshLocalSupplierData();
         } catch (refreshError) {
@@ -650,7 +651,7 @@ export function SuppliersClient({
       }
 
       setEditingId(null);
-      setEntryForm(emptyEntryForm());
+      setEntryForm(emptyEntryForm(today));
       try {
         await refreshLocalSupplierData();
       } catch (refreshError) {
@@ -721,7 +722,7 @@ export function SuppliersClient({
 
       if (editingId === tx.id) {
         setEditingId(null);
-        setEntryForm(emptyEntryForm());
+        setEntryForm(emptyEntryForm(today));
       }
       toast.success("Supplier transaction deleted.");
       try {
@@ -1146,7 +1147,7 @@ export function SuppliersClient({
                   disabled={busy}
                   onClick={() => {
                     setEditingId(null);
-                    setEntryForm(emptyEntryForm());
+                    setEntryForm(emptyEntryForm(today));
                   }}
                 >
                   Cancel edit

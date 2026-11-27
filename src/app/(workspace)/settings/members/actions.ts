@@ -120,9 +120,8 @@ export async function inviteMember(
   };
 }
 
-export async function revokeInvitation(formData: FormData): Promise<void> {
+export async function revokeInvitation(invitationId: string): Promise<void> {
   const context = await requireBusinessPermissions("manage_members");
-  const invitationId = formText(formData, "invitationId");
   if (!invitationId) throw new Error("Choose an invitation to revoke.");
 
   const { error } = await context.supabase

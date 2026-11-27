@@ -526,6 +526,43 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.list_business_members(
+    p_business_id uuid
+)
+RETURNS TABLE (
+    user_id uuid,
+    full_name text,
+    email text,
+    role text,
+    joined_at timestamptz,
+    is_active boolean
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT
+        bm.user_id,
+        COALESCE(
+            NULLIF(BTRIM(up.full_name), ''),
+            NULLIF(split_part(LOWER(au.email), '@', 1), ''),
+            'Team member'
+        ) AS full_name,
+        LOWER(au.email) AS email,
+        bm.role,
+        bm.joined_at,
+        bm.is_active
+    FROM public.business_members AS bm
+    LEFT JOIN public.user_profiles AS up ON up.id = bm.user_id
+    LEFT JOIN auth.users AS au ON au.id = bm.user_id
+    WHERE bm.business_id = p_business_id
+      AND bm.user_id IS NOT NULL
+      AND bm.is_active
+      AND public.has_business_permission(p_business_id, 'manage_members')
+    ORDER BY bm.joined_at ASC;
+$$;
+
 CREATE OR REPLACE FUNCTION public.set_authenticated_audit_actor()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -555,6 +592,9 @@ CREATE TRIGGER set_authenticated_audit_actor
 -- ==========================================
 -- DEMO SEED
 -- ==========================================
+-- This creates the base demo business. For a richer, presentation-ready
+-- dataset (customers, suppliers, products, transactions and stock history),
+-- run supabase/seed-demo.sql after applying this schema.
 
 INSERT INTO public.businesses (id, name)
 VALUES (
@@ -930,6 +970,7 @@ REVOKE ALL ON FUNCTION public.create_business_with_owner(
 ) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.accept_business_invitation(text) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.get_business_invitation(text) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.list_business_members(uuid) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.create_user_profile() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.set_authenticated_audit_actor() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.is_business_member(uuid) TO authenticated;
@@ -939,6 +980,7 @@ GRANT EXECUTE ON FUNCTION public.create_business_with_owner(
 ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.accept_business_invitation(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_business_invitation(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.list_business_members(uuid) TO authenticated;
 
 -- Atomically records an inventory movement, updates current stock, and audits it.
 CREATE OR REPLACE FUNCTION public.record_stock_movement(

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { DownloadIcon, FileSpreadsheetIcon } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,16 +17,8 @@ import {
 } from "@/lib/reports/build";
 import type { ReportSources } from "@/lib/reports/data";
 
-function localISODate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function monthStart(): string {
-  const today = new Date();
-  return localISODate(new Date(today.getFullYear(), today.getMonth(), 1));
+function monthStart(today: string): string {
+  return `${today.slice(0, 7)}-01`;
 }
 
 function formatValue(value: CellValue, format: ReportFormat): string {
@@ -165,10 +158,16 @@ function ReportTable({
   );
 }
 
-export function ReportsClient({ sources }: { sources: ReportSources }) {
+export function ReportsClient({
+  sources,
+  today,
+}: {
+  sources: ReportSources;
+  today: string;
+}) {
   const [type, setType] = useState<ReportType>("daily-income-expense");
-  const [from, setFrom] = useState(monthStart);
-  const [to, setTo] = useState(() => localISODate(new Date()));
+  const [from, setFrom] = useState(() => monthStart(today));
+  const [to, setTo] = useState(today);
   const invalidRange = Boolean(from && to && from > to);
   const report = useMemo(
     () => buildReport(sources, type, from, to),
@@ -177,10 +176,16 @@ export function ReportsClient({ sources }: { sources: ReportSources }) {
 
   function exportCsv() {
     downloadCsv(report.title, report.columns, report.rows, report.summaries);
+    toast.success(
+      `Exported ${report.rows.length} ${report.rows.length === 1 ? "row" : "rows"} to CSV.`,
+    );
   }
 
   function exportExcel() {
     downloadExcel(report.title, report.columns, report.rows, report.summaries);
+    toast.success(
+      `Exported ${report.rows.length} ${report.rows.length === 1 ? "row" : "rows"} to Excel.`,
+    );
   }
 
   return (

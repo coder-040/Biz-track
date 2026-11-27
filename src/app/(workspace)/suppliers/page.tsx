@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { SuppliersClient } from "@/components/suppliers/suppliers-client";
 import { SuppliersSkeleton } from "@/components/suppliers/suppliers-skeleton";
 import {
@@ -9,6 +10,7 @@ import {
   getSupplierTransactions,
 } from "@/lib/suppliers/data";
 import { getActiveProducts } from "@/lib/inventory-data";
+import { todayISOInTimeZone } from "@/lib/date";
 import { buildSupplierOrders } from "@/lib/suppliers/orders";
 
 export const metadata: Metadata = {
@@ -17,6 +19,7 @@ export const metadata: Metadata = {
 };
 
 async function SuppliersLoader() {
+  await connection();
   const [parties, transactions, orderData, role, products] = await Promise.all([
     getSupplierParties(),
     getSupplierTransactions(),
@@ -37,6 +40,7 @@ async function SuppliersLoader() {
       initialOrders={orders}
       initialProducts={products}
       role={role}
+      today={todayISOInTimeZone("Asia/Kathmandu")}
     />
   );
 }

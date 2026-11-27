@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import { Copy, Mail, UserPlus } from "lucide-react";
+import { toast } from "sonner";
 import {
   inviteMember,
   revokeInvitation,
@@ -21,10 +22,18 @@ interface PendingInvitation {
 
 interface Member {
   user_id: string;
+  full_name: string | null;
+  email: string | null;
   role: "owner" | "admin" | "staff";
   joined_at: string;
   is_active: boolean;
 }
+
+const ROLE_LABEL: Record<Member["role"], string> = {
+  owner: "Owner",
+  admin: "Admin",
+  staff: "Staff",
+};
 
 export function MembersClient({
   members,
@@ -41,6 +50,13 @@ export function MembersClient({
   );
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (state.error) toast.error(state.error);
+    else if (state.success) toast.success(state.success);
+  }, [state]);
 
   async function copyInvitation() {
     if (!state.inviteUrl) return;
@@ -48,10 +64,32 @@ export function MembersClient({
       await navigator.clipboard.writeText(state.inviteUrl);
       setCopied(true);
       setCopyError("");
+      toast.success("Invitation link copied to clipboard.");
     } catch {
       setCopied(false);
-      setCopyError("Could not copy the invitation link. Copy it from the address bar or try again.");
+      const message =
+        "Could not copy the invitation link. Copy it from the address bar or try again.";
+      setCopyError(message);
+      toast.error(message);
     }
+  }
+
+  function handleRevoke(invitationId: string) {
+    setRevokingId(invitationId);
+    startTransition(async () => {
+      try {
+        await revokeInvitation(invitationId);
+        toast.success("Invitation revoked.");
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not revoke the invitation.",
+        );
+      } finally {
+        setRevokingId(null);
+      }
+    });
   }
 
   return (
@@ -138,19 +176,31 @@ export function MembersClient({
           <p className="mt-3 text-sm text-stone-500">No members found.</p>
         ) : (
           <div className="mt-3 divide-y divide-stone-100">
-            {members.map((member) => (
-              <div key={member.user_id} className="flex items-center justify-between py-3">
-                <div>
-                  <p className="text-sm font-medium capitalize text-stone-900">{member.role}</p>
-                  <p className="text-xs text-stone-500">
-                    Joined {new Date(member.joined_at).toLocaleDateString()}
-                  </p>
+            {members.map((member) => {
+              const displayName =
+                member.full_name?.trim() || member.email || "Team member";
+              return (
+                <div key={member.user_id} className="flex items-center justify-between gap-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-stone-900">
+                      {displayName}
+                    </p>
+                    <p className="truncate text-xs text-stone-500">
+                      {member.email && member.email !== displayName ? `${member.email} · ` : ""}
+                      Joined {new Date(member.joined_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="rounded-full bg-[#0C3B37]/10 px-2.5 py-1 text-xs font-medium text-[#0C3B37]">
+                      {ROLE_LABEL[member.role]}
+                    </span>
+                    <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs capitalize text-stone-600">
+                      {member.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
                 </div>
-                <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs capitalize text-stone-600">
-                  {member.is_active ? "Active" : "Inactive"}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -174,12 +224,16 @@ export function MembersClient({
                     {invitation.role} · expires {new Date(invitation.expires_at).toLocaleDateString()}
                   </p>
                 </div>
-                <form action={revokeInvitation}>
-                  <input type="hidden" name="invitationId" value={invitation.id} />
-                  <Button type="submit" variant="ghost" size="sm" className="text-red-700">
-                    Revoke
-                  </Button>
-                </form>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-700"
+                  disabled={revokingId === invitation.id}
+                  onClick={() => handleRevoke(invitation.id)}
+                >
+                  {revokingId === invitation.id ? "Revoking…" : "Revoke"}
+                </Button>
               </div>
             ))}
           </div>
